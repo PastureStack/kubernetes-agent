@@ -1,21 +1,148 @@
 #!/bin/bash
-set -e
+set -euo pipefail
 
-cd $(dirname $0)/..
+repo_root=$(cd "$(dirname "$0")/.." && pwd)
+cd "${repo_root}"
 
-echo Running validation
+for script in scripts/build scripts/ci scripts/collect-go-licenses scripts/entry scripts/package scripts/test scripts/validate scripts/version; do
+    bash -n "${script}"
+done
 
-PACKAGES=". $(find -name '*.go' | xargs -I{} dirname {} |  cut -f2 -d/ | sort -u | grep -Ev '(^\.$|.git|.trash-cache|vendor|bin)' | sed -e 's!^!./!' -e 's!$!/...!')"
+go mod verify
+go mod tidy
+git diff --exit-code -- go.mod go.sum
+go vet -mod=mod ./...
 
-# TODO: enable go vet/lint
-#echo Running: go vet
-#go vet ${PACKAGES}
-#echo Running: golint
-#for i in ${PACKAGES}; do
-#    if [ -n "$(golint $i | grep -v 'should have comment.*or be unexported' | tee /dev/stderr)" ]; then
-#        failed=true
-#    fi
-#done
-#test -z "$failed"
-echo Running: go fmt
-test -z "$(go fmt ${PACKAGES} | tee /dev/stderr)"
+for module in third_party/event-subscriber third_party/go-rancher-metadata; do
+    (
+        cd "${module}"
+        go mod verify
+        go mod tidy
+        git diff --exit-code -- go.mod go.sum
+        go vet -mod=mod ./...
+    )
+done
+
+unformatted=$(find . -path './.git' -prune -o -name '*.go' -type f -print | xargs gofmt -l)
+if [ -n "${unformatted}" ]; then
+    echo "${unformatted}" >&2
+    exit 1
+fi
+
+required_markers=(
+    'go 1.26.6'
+    'FROM docker:29.6.2-cli@sha256:be132a9f282288de4afaf63379dff75711fda0147c6b72a9df44e51841402144 AS snapshot-ca-certificates'
+    'FROM ubuntu:26.04@sha256:678c6550cc43645e08669028bc177f50be4e7c5b8cca677067b1914d4afc7a03'
+    "UBUNTU_APT_SNAPSHOT='20260808T000000Z'"
+    'apt-get --snapshot "${UBUNTU_APT_SNAPSHOT}" update'
+    'GO_VERSION=1.26.6'
+    'DOCKER_VERSION=29.6.2'
+    'FROM gcr.io/distroless/static-debian12@sha256:4b2a093ef4649bccd586625090a3c668b254cfe180dee54f4c94f3e9bd7e381e'
+    'USER 65532:65532'
+    'org.opencontainers.image.revision="${SOURCE_REVISION}"'
+    'config.ContentType = "application/json"'
+    'truststore.ConfigurePlatformCA()'
+    'go mod download all'
+    'cache.ToListWatcherWithWatchListSemantics'
+    'cache.WaitForCacheSync'
+	'go test -mod=mod -race -count=1 ./...'
+	'PLATFORM_CA_ROOT must be an approved control-platform CA path'
+	'No workers available, dropping event'
+)
+for marker in "${required_markers[@]}"; do
+    if ! grep -R -Fq -- "${marker}" go.mod Dockerfile.dapper package scripts kubernetesclient watchevents truststore third_party .github main.go; then
+        echo "KUBERNETES_AGENT_REQUIRED_MARKER_MISSING marker=${marker}" >&2
+        exit 1
+    fi
+done
+
+grep -Fq 'k8s.io/client-go v0.36.3' go.mod
+
+if [ -d vendor ] || [ -e trash.conf ] || [ -e dockerclient/docker_client.go ]; then
+    echo "KUBERNETES_AGENT_STALE_VENDOR_OR_DOCKER_CLIENT_PRESENT" >&2
+    exit 1
+fi
+if grep -R --exclude=validate -E '[vV]?[0-9]+\.[0-9]+\.[0-9]+-(rancher|pasturestack)([._-]?[0-9A-Za-z]+)*|GO111MODULE=off|GO15VENDOREXPERIMENT' \
+	.github README.md SECURITY.md COMPATIBILITY.md Dockerfile.dapper Makefile package scripts; then
+	echo "KUBERNETES_AGENT_STALE_BRANDED_VERSION_OR_MODULE_MODE_PRESENT" >&2
+    exit 1
+fi
+if grep -R --exclude=validate -E 'GO_TEST_RACE=false|go test .*\$\{test_flags\[@\]\}' .github scripts Dockerfile.dapper; then
+	echo "KUBERNETES_AGENT_RACE_GATE_CAN_BE_DISABLED" >&2
+	exit 1
+fi
+if grep -Eq '^FROM (ubuntu|alpine|debian):' package/Dockerfile || \
+    grep -Eq 'apt-get|apk add|yum install|ENTRYPOINT \["/.*sh"' package/Dockerfile; then
+    echo "KUBERNETES_AGENT_RUNTIME_PACKAGE_MANAGER_OR_SHELL_PRESENT" >&2
+    exit 1
+fi
+if grep -R -E 'ghcr\.io/[^/]+/[^:[:space:]]+@sha256:' README.md SECURITY.md COMPATIBILITY.md package scripts; then
+    echo "KUBERNETES_AGENT_USER_VISIBLE_IMAGE_DIGEST_PRESENT" >&2
+    exit 1
+fi
+
+source package/ubuntu-apt.lock
+test "${UBUNTU_APT_SNAPSHOT}" = '20260808T000000Z'
+
+build_vex=security/dapper.openvex.json
+jq -e '
+    .["@context"] == "https://openvex.dev/ns/v0.2.0" and
+    .version == 2 and
+    .statements == []
+' "${build_vex}" >/dev/null
+
+security_workflow=.github/workflows/security-release-gate.yml
+for marker in \
+    'workflow_dispatch:' \
+    'actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1' \
+    'actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a' \
+    'TRIVY_IMAGE: aquasec/trivy:0.73.0@sha256:7cced7cae583819fc7806d4cbc0dbbc7cad18b99f7d3e235192e6da8c091045c' \
+    'KUBERNETES_SERVER_VERSION: v1.12.10' \
+    'KUBERNETES_SERVER_SHA512: 201ca1af1c4fbecd598a8a6dc0ff5c865e4dab767ec2e768e8100b0c6c450c5ae1ab773aad9e5cdf3f61c15abf3a28f7c4640fbaaac097096905366acbd90a97' \
+    'https://dl.k8s.io/release/${KUBERNETES_SERVER_VERSION}/kubernetes-server-linux-amd64.tar.gz' \
+    'RUN_LEGACY_K8S_INTEGRATION=true' \
+    'go run golang.org/x/vuln/cmd/govulncheck@v1.7.0' \
+	'select(.finding?.trace[-1]?.function != null)' \
+    'diff -u dist/locked-go-modules.tsv dist/runtime-license-modules.tsv' \
+    '--vex /source/security/dapper.openvex.json' \
+    'dapper-applicable-scan.json' \
+    '.build_environment.applicable.critical == 0' \
+	'.build_environment.applicable.high == 0' \
+    '--secure-port=16443' \
+    '--cert-dir="$cert_dir"' \
+    '.gitVersion == env.KUBERNETES_SERVER_VERSION' \
+    'retention-days: 7' \
+    'Enforce the recorded security result'; do
+    if ! grep -Fq -- "${marker}" "${security_workflow}"; then
+        echo "KUBERNETES_AGENT_SECURITY_WORKFLOW_MARKER_MISSING marker=${marker}" >&2
+        exit 1
+    fi
+done
+if grep -Eq '^[[:space:]]+(pull_request|schedule):' "${security_workflow}" || \
+    grep -Eq 'docker[[:space:]]+push|gh[[:space:]]+release[[:space:]]+create' "${security_workflow}" || \
+    grep -E '^[[:space:]]+uses:' "${security_workflow}" | grep -Ev '@[0-9a-f]{40}([[:space:]]+#.*)?$'; then
+    echo "KUBERNETES_AGENT_SECURITY_WORKFLOW_POLICY_VIOLATION" >&2
+    exit 1
+fi
+
+codeql_workflow=.github/workflows/codeql-verification.yml
+for marker in \
+    "'verification/kubernetes-agent-*'" \
+    'github/codeql-action/init@ff2f1c621b7f889edc0d3c761ac2e6a3f8cdb0dd # v4.37.7' \
+    'github/codeql-action/analyze@ff2f1c621b7f889edc0d3c761ac2e6a3f8cdb0dd # v4.37.7' \
+    'build-mode: manual' \
+    'upload: never' \
+    'codeql_critical_high' \
+    'test "$(git rev-list --count 63aadf22a77e2a452ee03c38159740835dc313cf..HEAD)" -eq 1'; do
+    if ! grep -Fq -- "${marker}" "${codeql_workflow}"; then
+		echo "KUBERNETES_AGENT_CODEQL_WORKFLOW_MARKER_MISSING marker=${marker}" >&2
+		exit 1
+	fi
+done
+if grep -E '^[[:space:]]+uses:' "${codeql_workflow}" | grep -Ev '@[0-9a-f]{40}([[:space:]]+#.*)?$'; then
+	echo "KUBERNETES_AGENT_CODEQL_WORKFLOW_POLICY_VIOLATION" >&2
+	exit 1
+fi
+
+git diff --check
+echo "KUBERNETES_AGENT_VALIDATION_OK"

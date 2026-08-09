@@ -1,0 +1,8 @@
+{
+  "@context": "https://openvex.dev/ns/v0.2.0",
+  "@id": "https://github.com/PastureStack/kubernetes-agent/security/vex/build-environment/2",
+  "author": "PastureStack contributors",
+  "timestamp": "2026-08-14T00:00:00Z",
+  "version": 2,
+  "statements": []
+}

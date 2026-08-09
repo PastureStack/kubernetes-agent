@@ -1,0 +1,5 @@
+* text=auto eol=lf
+*.sh text eol=lf
+scripts/* text eol=lf
+package/entry.sh text eol=lf
+package/update-platform-ca text eol=lf

@@ -1,10 +1,19 @@
 package kubernetesclient
 
-import "k8s.io/client-go/kubernetes"
+import (
+	"fmt"
 
-func NewClient(apiURL string) *Client {
+	"k8s.io/client-go/kubernetes"
+)
+
+func NewClient(apiURL string) (*Client, error) {
+	clientSet, err := GetK8sClientSet(apiURL)
+	if err != nil {
+		return nil, fmt.Errorf("initialize Kubernetes API client: %w", err)
+	}
+
 	client := &Client{
-		K8sClient: GetK8sClientSet(apiURL),
+		K8sClient: clientSet,
 	}
 
 	client.Pod = newPodClient(client)
@@ -12,7 +21,7 @@ func NewClient(apiURL string) *Client {
 	client.Service = newServiceClient(client)
 	client.Node = newNodeClient(client)
 
-	return client
+	return client, nil
 }
 
 type Client struct {

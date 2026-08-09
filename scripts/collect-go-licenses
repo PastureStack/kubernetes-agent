@@ -1,0 +1,59 @@
+#!/bin/bash
+set -euo pipefail
+
+repo_root=$(cd "$(dirname "$0")/.." && pwd)
+output=$(realpath -m "${1:?output directory is required}")
+case "${output}" in
+	"${repo_root}"|"${repo_root}/"|/|"")
+		echo "refusing unsafe license output directory" >&2
+		exit 1
+		;;
+	"${repo_root}"/*) ;;
+	*)
+		echo "license output directory must stay inside the repository" >&2
+		exit 1
+		;;
+esac
+
+rm -rf -- "${output}"
+mkdir -p "${output}/modules"
+: > "${output}/MODULES.tsv"
+
+# A fresh packaging container has no populated module cache. Download the
+# locked graph first so that every module has a directory whose legal files
+# can be collected; local replacements are resolved from the source tree.
+go mod download all
+
+missing=0
+while IFS='|' read -r module_path module_version module_dir; do
+    [ -n "${module_path}" ] || continue
+    safe_name=$(printf '%s@%s' "${module_path}" "${module_version}" | sed 's#[^A-Za-z0-9._@+-]#_#g')
+    destination="${output}/modules/${safe_name}"
+    found=0
+    while IFS= read -r -d '' legal_file; do
+        relative=${legal_file#"${module_dir}/"}
+        install -D -m 0644 "${legal_file}" "${destination}/${relative}"
+        found=$((found + 1))
+    done < <(find "${module_dir}" -maxdepth 2 -type f \
+        \( -iname 'LICENSE*' -o -iname 'COPYING*' -o -iname 'NOTICE*' \) \
+        -print0 | sort -z)
+    if [ "${found}" -eq 0 ]; then
+        printf 'missing license\t%s\t%s\n' "${module_path}" "${module_version}" >&2
+        missing=$((missing + 1))
+        continue
+    fi
+    printf '%s\t%s\t%s\t%d\n' "${module_path}" "${module_version}" "${safe_name}" "${found}" \
+        >> "${output}/MODULES.tsv"
+done < <(go list -mod=mod -m -f '{{if and .Dir .Version}}{{.Path}}|{{.Version}}|{{.Dir}}{{end}}' all)
+
+if [ "${missing}" -ne 0 ]; then
+    echo "GO_MODULE_LICENSES_MISSING count=${missing}" >&2
+    exit 1
+fi
+
+(
+    cd "${output}"
+    find modules -type f -print0 | sort -z | xargs -0 sha256sum
+) > "${output}/SHA256SUMS"
+test -s "${output}/MODULES.tsv"
+test -s "${output}/SHA256SUMS"

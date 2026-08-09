@@ -4,8 +4,8 @@ import (
 	"fmt"
 	"os"
 
-	"github.com/codegangsta/cli"
 	"github.com/rancher/go-rancher/v3"
+	"github.com/urfave/cli"
 )
 
 const (
@@ -14,32 +14,37 @@ const (
 )
 
 type Config struct {
-	KubernetesURL   string
-	CattleURL       string
-	CattleAccessKey string
-	CattleSecretKey string
-	WorkerCount     int
-	HealthCheckPort int
+	KubernetesURL     string
+	PlatformURL       string
+	PlatformAccessKey string
+	PlatformSecretKey string
+	WorkerCount       int
+	HealthCheckPort   int
+	Locale            string
 }
 
 func Conf(context *cli.Context) Config {
-	kubernetesURL := fmt.Sprintf("https://%s:%s", os.Getenv(kuberentesHostEnv), os.Getenv(kuberentesPortEnv))
+	kubernetesURL := context.String("kubernetes-url")
+	if host, port := os.Getenv(kuberentesHostEnv), os.Getenv(kuberentesPortEnv); host != "" && port != "" {
+		kubernetesURL = fmt.Sprintf("https://%s:%s", host, port)
+	}
 	config := Config{
-		KubernetesURL:   kubernetesURL,
-		CattleURL:       context.String("cattle-url"),
-		CattleAccessKey: context.String("cattle-access-key"),
-		CattleSecretKey: context.String("cattle-secret-key"),
-		WorkerCount:     context.Int("worker-count"),
-		HealthCheckPort: context.Int("health-check-port"),
+		KubernetesURL:     kubernetesURL,
+		PlatformURL:       context.String("platform-url"),
+		PlatformAccessKey: context.String("platform-access-key"),
+		PlatformSecretKey: context.String("platform-secret-key"),
+		WorkerCount:       context.Int("worker-count"),
+		HealthCheckPort:   context.Int("health-check-port"),
+		Locale:            context.String("locale"),
 	}
 
 	return config
 }
 
-func GetRancherClient(conf Config) (*client.RancherClient, error) {
+func GetPlatformClient(conf Config) (*client.RancherClient, error) {
 	return client.NewRancherClient(&client.ClientOpts{
-		Url:       conf.CattleURL,
-		AccessKey: conf.CattleAccessKey,
-		SecretKey: conf.CattleSecretKey,
+		Url:       conf.PlatformURL,
+		AccessKey: conf.PlatformAccessKey,
+		SecretKey: conf.PlatformSecretKey,
 	})
 }

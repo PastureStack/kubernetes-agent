@@ -1,26 +1,27 @@
 package watchevents
 
 import (
+	"os"
 	"testing"
 	"time"
 
 	"github.com/rancher/go-rancher/v3"
 	"gopkg.in/check.v1"
+	"k8s.io/api/core/v1"
 	k8sErr "k8s.io/apimachinery/pkg/api/errors"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/util/intstr"
-	"k8s.io/client-go/pkg/api/v1"
 
-	"github.com/rancher/kubernetes-agent/config"
-	"github.com/rancher/kubernetes-agent/kubernetesclient"
+	"github.com/PastureStack/kubernetes-agent/config"
+	"github.com/PastureStack/kubernetes-agent/kubernetesclient"
 )
 
 var conf = config.Config{
-	KubernetesURL:   "http://localhost:8080",
-	CattleURL:       "http://localhost:8082",
-	CattleAccessKey: "agent",
-	CattleSecretKey: "agentpass",
-	WorkerCount:     10,
+	KubernetesURL:     "http://localhost:8080",
+	PlatformURL:       "http://localhost:8082",
+	PlatformAccessKey: "agent",
+	PlatformSecretKey: "agentpass",
+	WorkerCount:       10,
 }
 
 // Hook up gocheck into the "go test" runner.
@@ -28,16 +29,28 @@ func Test(t *testing.T) {
 	check.TestingT(t)
 }
 
+func integrationKubernetesClient(c *check.C) *kubernetesclient.Client {
+	testURL := os.Getenv("KUBERNETES_TEST_URL")
+	if testURL == "" {
+		c.Skip("set KUBERNETES_TEST_URL to run Kubernetes watch integration tests")
+	}
+	conf.KubernetesURL = testURL
+	client, err := kubernetesclient.NewClient(testURL)
+	c.Assert(err, check.IsNil)
+	return client
+}
+
 type GenerichandlerTestSuite struct {
 	kClient *kubernetesclient.Client
 	events  chan client.ExternalServiceEvent
+	handler *serviceHandler
 }
 
 var _ = check.Suite(&GenerichandlerTestSuite{})
 
 func (s *GenerichandlerTestSuite) SetUpSuite(c *check.C) {
 	s.events = make(chan client.ExternalServiceEvent, 10)
-	s.kClient = kubernetesclient.NewClient(conf.KubernetesURL)
+	s.kClient = integrationKubernetesClient(c)
 	mock := &MockServiceEventOperations{
 		events: s.events,
 	}
@@ -45,10 +58,14 @@ func (s *GenerichandlerTestSuite) SetUpSuite(c *check.C) {
 		ExternalServiceEvent: mock,
 	}
 
-	svcHandler := NewServiceHandler(mockRancherClient, s.kClient)
-	svcHandler.Start()
-	defer svcHandler.Stop()
-	time.Sleep(time.Second)
+	s.handler = NewServiceHandler(mockRancherClient, s.kClient)
+	c.Assert(s.handler.Start(), check.IsNil)
+}
+
+func (s *GenerichandlerTestSuite) TearDownSuite(c *check.C) {
+	if s.handler != nil {
+		s.handler.Stop()
+	}
 }
 
 func (s *GenerichandlerTestSuite) TestService(c *check.C) {

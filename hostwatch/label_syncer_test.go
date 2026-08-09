@@ -2,30 +2,26 @@ package hostwatch
 
 import (
 	"encoding/json"
-	"io/ioutil"
-	"net"
+	"io"
 	"net/http"
+	"net/http/httptest"
 	"os"
 	"strings"
 	"testing"
 	"time"
 
-	log "github.com/Sirupsen/logrus"
+	"github.com/PastureStack/kubernetes-agent/kubernetesclient"
 	cache "github.com/patrickmn/go-cache"
 	"github.com/rancher/go-rancher-metadata/metadata"
-	"github.com/rancher/kubernetes-agent/kubernetesclient"
+	"k8s.io/api/core/v1"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
-	"k8s.io/client-go/pkg/api/v1"
 )
 
 var (
 	metadataHandler *fakeMetadataHandler
 	kubeHandler     *fakeKubeNodeHandler
-)
-
-const (
-	fakeMetadataURL = "http://0.0.0.0:42500/2015-12-19"
-	kubeURL         = "http://0.0.0.0:42501"
+	fakeMetadataURL string
+	kubeURL         string
 )
 
 type fakeMetadataHandler struct {
@@ -42,20 +38,6 @@ type fakeKubeNodeHandler struct {
 	nodes map[string]*v1.Node
 }
 
-type tcpKeepAliveListener struct {
-	*net.TCPListener
-}
-
-func (ln tcpKeepAliveListener) Accept() (c net.Conn, err error) {
-	tc, err := ln.AcceptTCP()
-	if err != nil {
-		return
-	}
-	tc.SetKeepAlive(true)
-	tc.SetKeepAlivePeriod(3 * time.Minute)
-	return tc, nil
-}
-
 func (f *fakeKubeNodeHandler) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 	// GET Node
 	if r.Method == http.MethodGet {
@@ -68,7 +50,7 @@ func (f *fakeKubeNodeHandler) ServeHTTP(w http.ResponseWriter, r *http.Request) 
 	// Replace Node
 	if r.Method == http.MethodPut {
 		node := &v1.Node{}
-		data, _ := ioutil.ReadAll(r.Body)
+		data, _ := io.ReadAll(r.Body)
 		json.Unmarshal(data, node)
 		f.nodes[node.Name] = node
 		w.Header().Set("Content-Type", "application/json")
@@ -86,48 +68,33 @@ func TestMain(m *testing.M) {
 	}
 
 	metadataMux := http.NewServeMux()
-	srv := http.Server{
-		Addr:    "0.0.0.0:42500",
-		Handler: metadataMux,
-	}
-	errChan := make(chan error, 1)
 	metadataMux.Handle("/2015-12-19/hosts/", metadataHandler)
-	srvLn, err := net.Listen("tcp", srv.Addr)
-	if err != nil {
-		log.Fatalf("Error listening on tcp port 42500: %v", err)
-	}
-	go func() {
-		errChan <- srv.Serve(tcpKeepAliveListener{srvLn.(*net.TCPListener)})
-	}()
+	metadataServer := httptest.NewServer(metadataMux)
+	fakeMetadataURL = metadataServer.URL + "/2015-12-19"
+
 	kubeMux := http.NewServeMux()
-	ksrv := http.Server{
-		Addr:    "0.0.0.0:42501",
-		Handler: kubeMux,
-	}
 	kubeMux.Handle("/api/v1/nodes/", kubeHandler)
-	ksrvLn, err := net.Listen("tcp", ksrv.Addr)
-	if err != nil {
-		log.Fatalf("Error listening on tcp port 42501: %v", err)
-	}
-	go func() {
-		errChan <- ksrv.Serve(tcpKeepAliveListener{ksrvLn.(*net.TCPListener)})
-	}()
-	intChan := make(chan int, 1)
-	go func() {
-		intChan <- m.Run()
-	}()
-	var returnVal int
-	select {
-	case err := <-errChan:
-		log.Fatalf("Error while running metadata/kuberserver, [%v]", err)
-	case returnVal = <-intChan:
-	}
+	kubeServer := httptest.NewServer(kubeMux)
+	kubeURL = kubeServer.URL
+
+	returnVal := m.Run()
+	kubeServer.Close()
+	metadataServer.Close()
 	os.Exit(returnVal)
+}
+
+func newTestKubernetesClient(t *testing.T) *kubernetesclient.Client {
+	t.Helper()
+	client, err := kubernetesclient.NewClient(kubeURL)
+	if err != nil {
+		t.Fatalf("create test Kubernetes client: %v", err)
+	}
+	return client
 }
 
 func TestDetectsRemoval(t *testing.T) {
 	metadataClient := metadata.NewClient(fakeMetadataURL)
-	kubeClient := kubernetesclient.NewClient(kubeURL)
+	kubeClient := newTestKubernetesClient(t)
 	c := cache.New(1*time.Minute, 1*time.Minute)
 
 	metadataHandler.hosts = []metadata.Host{
@@ -159,7 +126,7 @@ func TestDetectsRemoval(t *testing.T) {
 
 func TestDetectsAddition(t *testing.T) {
 	metadataClient := metadata.NewClient(fakeMetadataURL)
-	kubeClient := kubernetesclient.NewClient(kubeURL)
+	kubeClient := newTestKubernetesClient(t)
 	c := cache.New(1*time.Minute, 1*time.Minute)
 
 	metadataHandler.hosts = []metadata.Host{
@@ -197,7 +164,7 @@ func TestDetectsAddition(t *testing.T) {
 
 func TestDetectsChange(t *testing.T) {
 	metadataClient := metadata.NewClient(fakeMetadataURL)
-	kubeClient := kubernetesclient.NewClient(kubeURL)
+	kubeClient := newTestKubernetesClient(t)
 	c := cache.New(1*time.Minute, 1*time.Minute)
 
 	metadataHandler.hosts = []metadata.Host{

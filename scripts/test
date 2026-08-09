@@ -1,78 +1,17 @@
 #!/bin/bash
-set -e
-
-cleanup()
-{
-    local exit=$?
-    kill $PID || true
-    wait $PID || true
-    exit $exit
-}
+set -euo pipefail
 
 cd $(dirname $0)/..
 
-export SOCK=/var/run/dind.sock
-export DOCKER_HOST=unix://${SOCK}
-export CATTLE_DOCKER_USE_BOOT2DOCKER=true
+echo "Running Go unit tests"
 export INCLUSTER_CONFIG=false
-
-ip link set dev eth0 mtu 1300
-
-if grep overlay /proc/filesystems; then
-    STORAGE=overlay
-else
-    STORAGE=aufs
-fi
-docker daemon -s $STORAGE -D -H $DOCKER_HOST >/tmp/docker.log 2>&1 &
-PID=$!
+test_kubeconfig=$(mktemp)
+cleanup() {
+    rm -f "${test_kubeconfig}"
+}
 trap cleanup EXIT
-
-sleep 1
-
-docker ps -q
-for i in nginx:latest gcr.io/google_containers/hyperkube-amd64:v1.2.4 gcr.io/google_containers/etcd:2.2.1  gcr.io/google_containers/pause:2.0; do
-    docker inspect $i >/dev/null 2>&1 || docker pull $i
-done
-
-IDS=$(docker ps -qa)
-if [ -n "$IDS" ]; then
-    docker kill $(docker ps -qa) || true
-    docker rm -fv $(docker ps -qa) || true
-fi
-
-# Start up kubernetes
-# docker load -i kubernetes-images.tar.gz #Uncomment for faster local wrap ci (if you have the tar)
-#docker run --net=host -d --privileged -v ${SOCK}:/var/run/docker.sock gcr.io/google_containers/hyperkube:v1.2.4 /hyperkube kubelet --api_servers=http://localhost:8080 --v=2 --address=0.0.0.0 --enable_server --hostname_override=127.0.0.1 --config=/etc/kubernetes/manifests --allow-privileged=true
-#docker run -d --net=host --privileged gcr.io/google_containers/hyperkube:v1.2.4
-export ARCH=amd64 K8S_VERSION=v1.2.4
-docker run -d \
-    --volume=/:/rootfs:ro \
-    --volume=/sys:/sys:rw \
-    --volume=/var/lib/docker/:/var/lib/docker:rw \
-    --volume=/var/lib/kubelet/:/var/lib/kubelet:rw \
-    --volume=/var/run:/var/run:rw \
-    --volume=/var/run/dind.sock:/var/run/docker.sock:rw \
-    --net=host \
-    --pid=host \
-    --privileged \
-    gcr.io/google_containers/hyperkube-${ARCH}:${K8S_VERSION} \
-    /hyperkube kubelet \
-        --hostname-override=127.0.0.1 \
-        --api-servers=http://localhost:8080 \
-        --config=/etc/kubernetes/manifests \
-        --cluster-dns=10.0.0.10 \
-        --cluster-domain=cluster.local \
-        --allow-privileged --v=2
-docker ps -a
-
-echo "Waiting for kubernetes"
-until $(curl --output /dev/null --silent --fail http://localhost:8080/api/v1/services); do
-    printf '.'
-    sleep 5
-done
-
-mkdir -p /etc/kubernetes/ssl/
-cat > /etc/kubernetes/ssl/kubeconfig << EOF
+export KUBECONFIG="${test_kubeconfig}"
+cat > "${KUBECONFIG}" <<'EOF'
 apiVersion: v1
 kind: Config
 clusters:
@@ -92,11 +31,16 @@ users:
   user:
     token: "test"
 EOF
+if [ "${RUN_LEGACY_K8S_INTEGRATION:-false}" = "true" ] && [ -z "${KUBERNETES_TEST_URL:-}" ]; then
+    echo "KUBERNETES_TEST_URL is required when RUN_LEGACY_K8S_INTEGRATION=true" >&2
+    exit 1
+fi
+go test -mod=mod -count=1 -v ./...
 
-for pkg in $(go list ./...); do
-    if [[ $pkg != *"vendor"* ]]; then
-        go test -v $pkg
-    fi
-done
+echo "Running embedded event subscriber tests"
+(
+    cd third_party/event-subscriber
+    go test -mod=mod -count=1 -v ./...
+)
 
-echo OK
+echo "OK"

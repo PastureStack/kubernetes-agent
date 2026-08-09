@@ -1,20 +1,28 @@
 package kubernetesclient
 
 import (
+	"os"
 	"testing"
 
-	log "github.com/Sirupsen/logrus"
+	log "github.com/sirupsen/logrus"
+	"k8s.io/api/core/v1"
 	k8sErr "k8s.io/apimachinery/pkg/api/errors"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/util/intstr"
-	"k8s.io/client-go/pkg/api/v1"
 )
 
 func TestService(t *testing.T) {
-	client := NewClient("http://localhost:8080")
+	testURL := os.Getenv("KUBERNETES_TEST_URL")
+	if testURL == "" {
+		t.Skip("set KUBERNETES_TEST_URL to run the Kubernetes API integration test")
+	}
+	client, err := NewClient(testURL)
+	if err != nil {
+		t.Fatalf("create Kubernetes integration client: %v", err)
+	}
 
 	svcName := "test1"
-	err := cleanupService(client, "default", svcName)
+	err = cleanupService(client, "default", svcName)
 	if err != nil {
 		t.Fatal(err)
 	}

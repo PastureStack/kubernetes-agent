@@ -1,15 +1,15 @@
 package watchevents
 
 import (
-	"bytes"
+	"sort"
 	"strings"
 	"time"
 
-	"github.com/Sirupsen/logrus"
+	"github.com/PastureStack/kubernetes-agent/kubernetesclient"
 	"github.com/rancher/go-rancher/v3"
-	"github.com/rancher/kubernetes-agent/kubernetesclient"
+	"github.com/sirupsen/logrus"
+	"k8s.io/api/core/v1"
 	"k8s.io/apimachinery/pkg/fields"
-	"k8s.io/client-go/pkg/api/v1"
 	"k8s.io/client-go/tools/cache"
 )
 
@@ -31,10 +31,10 @@ func NewServiceHandler(rClient *client.RancherClient, kClient *kubernetesclient.
 	return sHandler
 }
 
-func (s *serviceHandler) startServiceWatch() chan struct{} {
-	watchlist := cache.NewListWatchFromClient(s.kClient.K8sClient.Core().RESTClient(), "services", v1.NamespaceAll, fields.Everything())
+func (s *serviceHandler) startServiceWatch() (chan struct{}, error) {
+	watchlist := cache.NewListWatchFromClient(s.kClient.K8sClient.CoreV1().RESTClient(), "services", v1.NamespaceAll, fields.Everything())
 	_, controller := cache.NewInformer(
-		watchlist,
+		compatibleListWatch(watchlist),
 		&v1.Service{},
 		time.Second*0,
 		cache.ResourceEventHandlerFuncs{
@@ -59,16 +59,12 @@ func (s *serviceHandler) startServiceWatch() chan struct{} {
 		},
 	)
 
-	stop := make(chan struct{})
-	go controller.Run(stop)
-
-	return stop
+	return runAndSyncController(controller, "service")
 }
 
 func (s *serviceHandler) add(realSVC v1.Service, eventType string) error {
 	kind := kubernetesServiceKind
 	metadata := realSVC.ObjectMeta
-	selectorMap := realSVC.Spec.Selector
 	clusterIP := realSVC.Spec.ClusterIP
 
 	var serviceEvent = &client.ExternalServiceEvent{}
@@ -79,21 +75,9 @@ func (s *serviceHandler) add(realSVC v1.Service, eventType string) error {
 		serviceEvent.EventType = "service.update"
 	}
 
-	if selectorMap != nil {
-		selectorMap["io.kubernetes.pod.namespace"] = metadata.Namespace
-	}
+	selector := serviceSelector(realSVC.Spec.Selector, metadata.Namespace)
 
-	var buffer bytes.Buffer
-	for key, v := range selectorMap {
-		buffer.WriteString(key)
-		buffer.WriteString("=")
-		buffer.WriteString(v)
-		buffer.WriteString(",")
-	}
-	selector := buffer.String()
-	selector = strings.TrimSuffix(selector, ",")
-
-	rancherUUID, _ := metadata.Labels["io.rancher.uuid"]
+	legacyUUID, _ := metadata.Labels["io.rancher.uuid"]
 	var vip string
 	if !strings.EqualFold(clusterIP, "None") {
 		vip = clusterIP
@@ -103,7 +87,7 @@ func (s *serviceHandler) add(realSVC v1.Service, eventType string) error {
 		Name:       metadata.Name,
 		ExternalId: string(metadata.UID),
 		Selector:   selector,
-		Uuid:       rancherUUID,
+		Uuid:       legacyUUID,
 		Vip:        vip,
 	}
 	serviceEvent.Service = service
@@ -120,12 +104,35 @@ func (s *serviceHandler) add(realSVC v1.Service, eventType string) error {
 		}
 		env["name"] = namespace.Name
 		env["externalId"] = "kubernetes://" + string(namespace.UID)
-		rancherUUID, _ := namespace.Labels["io.rancher.uuid"]
-		env["uuid"] = rancherUUID
+		legacyUUID, _ := namespace.Labels["io.rancher.uuid"]
+		env["uuid"] = legacyUUID
 	}
 	serviceEvent.Environment = env
 	_, err := s.rClient.ExternalServiceEvent.Create(serviceEvent)
 	return err
+}
+
+func serviceSelector(source map[string]string, namespace string) string {
+	if source == nil {
+		return ""
+	}
+	selectorMap := make(map[string]string, len(source)+1)
+	for key, value := range source {
+		selectorMap[key] = value
+	}
+	selectorMap["io.kubernetes.pod.namespace"] = namespace
+
+	keys := make([]string, 0, len(selectorMap))
+	for key := range selectorMap {
+		keys = append(keys, key)
+	}
+	sort.Strings(keys)
+
+	parts := make([]string, 0, len(keys))
+	for _, key := range keys {
+		parts = append(parts, key+"="+selectorMap[key])
+	}
+	return strings.Join(parts, ",")
 }
 
 func (s *serviceHandler) delete(realSVC v1.Service) error {
@@ -144,15 +151,18 @@ func (s *serviceHandler) delete(realSVC v1.Service) error {
 	return err
 }
 
-func (s *serviceHandler) Start() {
+func (s *serviceHandler) Start() error {
 	logrus.Infof("Starting service watch")
-	s.serviceWatchChan = s.startServiceWatch()
+	stop, err := s.startServiceWatch()
+	if err != nil {
+		return err
+	}
+	s.serviceWatchChan = stop
+	return nil
 }
 
 func (s *serviceHandler) Stop() {
-	if s.serviceWatchChan != nil {
-		s.serviceWatchChan <- struct{}{}
-	}
+	closeWatch(&s.serviceWatchChan)
 }
 
 func serviceAddDelete(f func(v1.Service)) func(interface{}) {

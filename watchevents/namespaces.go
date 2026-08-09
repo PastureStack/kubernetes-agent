@@ -3,12 +3,12 @@ package watchevents
 import (
 	"time"
 
-	"github.com/Sirupsen/logrus"
+	"github.com/PastureStack/kubernetes-agent/kubernetesclient"
 	"github.com/rancher/go-rancher/v3"
-	"github.com/rancher/kubernetes-agent/kubernetesclient"
+	"github.com/sirupsen/logrus"
+	"k8s.io/api/core/v1"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/fields"
-	"k8s.io/client-go/pkg/api/v1"
 	"k8s.io/client-go/tools/cache"
 )
 
@@ -32,10 +32,10 @@ func NewNamespaceHandler(rClient *client.RancherClient, kClient *kubernetesclien
 	return nsHandler
 }
 
-func (n *namespaceHandler) startNamespaceWatch() chan struct{} {
-	watchlist := cache.NewListWatchFromClient(n.kClient.K8sClient.Core().RESTClient(), "namespaces", "", fields.Everything())
+func (n *namespaceHandler) startNamespaceWatch() (chan struct{}, error) {
+	watchlist := cache.NewListWatchFromClient(n.kClient.K8sClient.CoreV1().RESTClient(), "namespaces", "", fields.Everything())
 	_, controller := cache.NewInformer(
-		watchlist,
+		compatibleListWatch(watchlist),
 		&v1.Namespace{},
 		time.Second*0,
 		cache.ResourceEventHandlerFuncs{
@@ -54,10 +54,7 @@ func (n *namespaceHandler) startNamespaceWatch() chan struct{} {
 		},
 	)
 
-	stop := make(chan struct{})
-	go controller.Run(stop)
-
-	return stop
+	return runAndSyncController(controller, "namespace")
 }
 
 func (n *namespaceHandler) delete(realNS v1.Namespace) error {
@@ -83,15 +80,18 @@ func (n *namespaceHandler) delete(realNS v1.Namespace) error {
 	return err
 }
 
-func (n *namespaceHandler) Start() {
+func (n *namespaceHandler) Start() error {
 	logrus.Infof("Starting namespace watch")
-	n.nsWatchChan = n.startNamespaceWatch()
+	stop, err := n.startNamespaceWatch()
+	if err != nil {
+		return err
+	}
+	n.nsWatchChan = stop
+	return nil
 }
 
 func (n *namespaceHandler) Stop() {
-	if n.nsWatchChan != nil {
-		n.nsWatchChan <- struct{}{}
-	}
+	closeWatch(&n.nsWatchChan)
 }
 
 func namespaceAddDelete(f func(v1.Namespace)) func(interface{}) {

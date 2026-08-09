@@ -4,14 +4,13 @@ import (
 	"testing"
 
 	"github.com/rancher/go-rancher-metadata/metadata"
-	"github.com/rancher/kubernetes-agent/kubernetesclient"
+	"k8s.io/api/core/v1"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
-	"k8s.io/client-go/pkg/api/v1"
 )
 
 func TestActiveInactive(t *testing.T) {
 	metadataClient := metadata.NewClient(fakeMetadataURL)
-	kubeClient := kubernetesclient.NewClient(kubeURL)
+	kubeClient := newTestKubernetesClient(t)
 
 	metadataHandler.hosts = []metadata.Host{
 		{
@@ -47,7 +46,7 @@ func TestActiveInactive(t *testing.T) {
 
 func TestInactiveActive(t *testing.T) {
 	metadataClient := metadata.NewClient(fakeMetadataURL)
-	kubeClient := kubernetesclient.NewClient(kubeURL)
+	kubeClient := newTestKubernetesClient(t)
 
 	metadataHandler.hosts = []metadata.Host{
 		{

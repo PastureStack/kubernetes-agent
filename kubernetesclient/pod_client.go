@@ -1,8 +1,10 @@
 package kubernetesclient
 
 import (
+	"context"
+
+	"k8s.io/api/core/v1"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
-	"k8s.io/client-go/pkg/api/v1"
 )
 
 type PodOperations interface {
@@ -22,13 +24,13 @@ type PodClient struct {
 }
 
 func (c *PodClient) ByName(namespace string, name string) (*v1.Pod, error) {
-	return c.client.K8sClient.CoreV1().Pods(namespace).Get(name, metav1.GetOptions{})
+	return c.client.K8sClient.CoreV1().Pods(namespace).Get(context.Background(), name, metav1.GetOptions{})
 }
 
 func (c *PodClient) CreatePod(namespace string, resource *v1.Pod) (*v1.Pod, error) {
-	return c.client.K8sClient.CoreV1().Pods(namespace).Create(resource)
+	return c.client.K8sClient.CoreV1().Pods(namespace).Create(context.Background(), resource, metav1.CreateOptions{})
 }
 
 func (c *PodClient) DeletePod(namespace string, name string) error {
-	return c.client.K8sClient.CoreV1().Pods(namespace).Delete(name, &metav1.DeleteOptions{})
+	return c.client.K8sClient.CoreV1().Pods(namespace).Delete(context.Background(), name, metav1.DeleteOptions{})
 }

@@ -5,16 +5,16 @@ import (
 	"os"
 	"time"
 
+	"github.com/PastureStack/kubernetes-agent/kubernetesclient"
 	cache "github.com/patrickmn/go-cache"
 	"github.com/rancher/go-rancher-metadata/metadata"
-	"github.com/rancher/kubernetes-agent/kubernetesclient"
 
-	log "github.com/Sirupsen/logrus"
+	log "github.com/sirupsen/logrus"
 )
 
 const (
 	metadataURLTemplate = "http://%v/2015-12-19"
-	rancherLabelKey     = "io.rancher.labels"
+	legacyLabelKey      = "io.rancher.labels"
 	cacheExpiryMinutes  = 5 * time.Minute
 
 	// DefaultMetadataAddress specifies the default value to use if nothing is specified
@@ -34,7 +34,10 @@ type hostSyncer struct {
 
 // StartHostSync ...
 func StartHostSync(interval int, kClient *kubernetesclient.Client) error {
-	metadataAddress := os.Getenv("RANCHER_METADATA_ADDRESS")
+	metadataAddress := os.Getenv("PLATFORM_METADATA_ADDRESS")
+	if metadataAddress == "" {
+		metadataAddress = os.Getenv("RANCHER_METADATA_ADDRESS")
+	}
 	if metadataAddress == "" {
 		metadataAddress = DefaultMetadataAddress
 	}

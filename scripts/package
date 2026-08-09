@@ -1,16 +1,38 @@
 #!/bin/bash
-set -e
+set -euo pipefail
 
 source $(dirname $0)/version
 
 cd $(dirname $0)/../package
 
-TAG=${TAG:-${VERSION}}
-REPO=${REPO:-rancher}
+cleanup() {
+    rm -f kubernetes-agent LICENSE SECURITY.md ORIGIN.md COMPATIBILITY.md
+    rm -rf -- third-party-licenses
+}
+trap cleanup EXIT
+
+TAG=${TAG:-v${VERSION}}
+REPO=${REPO:-pasturestack}
+if [ -n "${IMAGE_NAME:-}" ]; then
+    case "${IMAGE_NAME}" in
+        *:*) IMAGE="${IMAGE_NAME}" ;;
+        *) IMAGE="${IMAGE_NAME}:${TAG}" ;;
+    esac
+else
+    IMAGE="${REPO}/kubernetes-agent:${TAG}"
+fi
 
 cp ../bin/kubernetes-agent .
+cp ../LICENSE .
+cp ../SECURITY.md .
+cp ../ORIGIN.md .
+cp ../COMPATIBILITY.md .
+bash ../scripts/collect-go-licenses third-party-licenses
 
-IMAGE=${REPO}/kubernetes-agent:${TAG}
-docker build -t ${IMAGE} .
-echo ${IMAGE} > ../dist/images
-echo Built ${IMAGE}
+build_args=()
+build_args+=(--build-arg "IMAGE_VERSION=${VERSION}")
+build_args+=(--build-arg "SOURCE_REVISION=$(git rev-parse HEAD)")
+docker build --network none "${build_args[@]}" -t "${IMAGE}" .
+mkdir -p ../dist
+echo "${IMAGE}" > ../dist/images
+echo "Built ${IMAGE}"

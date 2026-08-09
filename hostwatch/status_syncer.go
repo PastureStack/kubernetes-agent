@@ -1,9 +1,9 @@
 package hostwatch
 
 import (
-	log "github.com/Sirupsen/logrus"
+	"github.com/PastureStack/kubernetes-agent/kubernetesclient"
 	"github.com/rancher/go-rancher-metadata/metadata"
-	"github.com/rancher/kubernetes-agent/kubernetesclient"
+	log "github.com/sirupsen/logrus"
 )
 
 var (

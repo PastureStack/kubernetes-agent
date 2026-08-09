@@ -1,14 +1,16 @@
 #!/bin/bash
+set -euo pipefail
 
-if [ -n "$(git status --porcelain --untracked-files=no)" ]; then
-    DIRTY="-dirty"
+candidate=${VERSION_OVERRIDE:-}
+if [ -z "${candidate}" ]; then
+    candidate=$(git tag --points-at HEAD --list 'v[0-9]*.[0-9]*.[0-9]*' | LC_ALL=C sort -V | tail -n 1)
 fi
-
-COMMIT=$(git rev-parse --short HEAD)
-GIT_TAG=$(git tag -l --contains HEAD | head -n 1)
-
-if [[ -z "$DIRTY" && -n "$GIT_TAG" ]]; then
-    VERSION=$GIT_TAG
-else
-    VERSION="${COMMIT}${DIRTY}"
+candidate=${candidate#v}
+if [ -z "${candidate}" ]; then
+    candidate=0.0.0
 fi
+if ! [[ "${candidate}" =~ ^[0-9]+\.[0-9]+\.[0-9]+$ ]]; then
+    echo "VERSION_OVERRIDE must be a numeric semantic version such as 0.7.3" >&2
+    return 1 2>/dev/null || exit 1
+fi
+VERSION=${candidate}

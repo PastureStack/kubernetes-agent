@@ -3,13 +3,13 @@ package hostwatch
 import (
 	"fmt"
 
-	log "github.com/Sirupsen/logrus"
 	cache "github.com/patrickmn/go-cache"
+	log "github.com/sirupsen/logrus"
 
+	"github.com/PastureStack/kubernetes-agent/kubernetesclient"
 	"github.com/rancher/go-rancher-metadata/metadata"
-	"github.com/rancher/kubernetes-agent/kubernetesclient"
+	"k8s.io/api/core/v1"
 	"k8s.io/apimachinery/pkg/util/validation"
-	"k8s.io/client-go/pkg/api/v1"
 )
 
 func labelSync(kClient *kubernetesclient.Client, metadataClient metadata.Client, c *cache.Cache) error {
@@ -34,7 +34,7 @@ func labelSync(kClient *kubernetesclient.Client, metadataClient metadata.Client,
 		if node.Annotations == nil {
 			node.Annotations = make(map[string]string)
 		}
-		rancherLabelsMetadataStore := node.Annotations
+		legacyLabelsMetadataStore := node.Annotations
 		changed := false
 		//check for new/updated labels
 		for k, v1 := range host.Labels {
@@ -58,8 +58,8 @@ func labelSync(kClient *kubernetesclient.Client, metadataClient metadata.Client,
 			if changed {
 				break
 			}
-			if _, ok := rancherLabelsMetadataStore[toKMetaLabel(k)]; !ok {
-				// This is not a rancher managed label
+			if _, ok := legacyLabelsMetadataStore[toKMetaLabel(k)]; !ok {
+				// This is not a platform-managed compatibility label.
 				continue
 			}
 			if _, ok := host.Labels[k]; !ok {
@@ -78,24 +78,24 @@ func labelSync(kClient *kubernetesclient.Client, metadataClient metadata.Client,
 			if node.Annotations == nil {
 				node.Annotations = make(map[string]string)
 			}
-			rancherLabelsMetadataStore := node.Annotations
+			legacyLabelsMetadataStore := node.Annotations
 			for k, v1 := range host.Labels {
 				if !isValidLabelValue(v1) {
 					log.Infof("skipping invalid label %s=%s", k, v1)
 					continue
 				}
 				node.Labels[k] = v1
-				rancherLabelsMetadataStore[toKMetaLabel(k)] = ""
+				legacyLabelsMetadataStore[toKMetaLabel(k)] = ""
 
 			}
 			for k := range node.Labels {
-				if _, ok := rancherLabelsMetadataStore[toKMetaLabel(k)]; !ok {
-					// This is not a rancher managed label
+				if _, ok := legacyLabelsMetadataStore[toKMetaLabel(k)]; !ok {
+					// This is not a platform-managed compatibility label.
 					continue
 				}
 				if _, ok := host.Labels[k]; !ok {
 					delete(node.Labels, k)
-					delete(rancherLabelsMetadataStore, toKMetaLabel(k))
+					delete(legacyLabelsMetadataStore, toKMetaLabel(k))
 				}
 			}
 			_, err = kClient.Node.ReplaceNode(node)
@@ -121,7 +121,7 @@ func isValidLabelValue(label string) bool {
 }
 
 func toKMetaLabel(label string) string {
-	return fmt.Sprintf("%s.%s", rancherLabelKey, label)
+	return fmt.Sprintf("%s.%s", legacyLabelKey, label)
 }
 
 func getKubeNode(kClient *kubernetesclient.Client, hostname string) (*v1.Node, error) {
