@@ -29,18 +29,18 @@ jobs:
         run: |
           set -euo pipefail
           test -z "$(git status --porcelain)"
-          test "$(git rev-list --count 63aadf22a77e2a452ee03c38159740835dc313cf..HEAD)" -eq 1
+          git merge-base --is-ancestor 63aadf22a77e2a452ee03c38159740835dc313cf "$GITHUB_SHA"
 
       - name: Install checksum-pinned Go toolchain
         shell: bash
         run: |
           set -euo pipefail
-          archive="$RUNNER_TEMP/go1.26.6.linux-amd64.tar.gz"
+          archive="$RUNNER_TEMP/go1.27.0.linux-amd64.tar.gz"
           curl --fail --silent --show-error --location \
             --output "$archive" \
-            'https://go.dev/dl/go1.26.6.linux-amd64.tar.gz'
+            'https://go.dev/dl/go1.27.0.linux-amd64.tar.gz'
           printf '%s  %s\n' \
-            '708effb774be8237570d0add163225abbdfaf4fca28b2611df167beba4feef89' \
+            '675c26c449cbb18fc24b74650de1eabbae6e16f64326fd85a283fb3b58280685' \
             "$archive" | sha256sum --check
           tar -C "$RUNNER_TEMP" -xzf "$archive"
           "$RUNNER_TEMP/go/bin/go" version

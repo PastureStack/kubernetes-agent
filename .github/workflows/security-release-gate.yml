@@ -23,10 +23,11 @@ jobs:
       CANDIDATE_TAG: v0.7.3
       IMAGE: pasturestack/kubernetes-agent:v0.7.3
       DAPPER_IMAGE: pasturestack-kubernetes-agent-dapper:security-gate
-      KUBERNETES_SERVER_VERSION: v1.12.10
-      KUBERNETES_SERVER_SHA512: 201ca1af1c4fbecd598a8a6dc0ff5c865e4dab767ec2e768e8100b0c6c450c5ae1ab773aad9e5cdf3f61c15abf3a28f7c4640fbaaac097096905366acbd90a97
-      ETCD_TEST_IMAGE: registry.k8s.io/etcd-amd64:3.2.24@sha256:7b073bdab8c52dc23dfb3e2101597d30304437869ad8c0b425301e96a066c408
-      TRIVY_IMAGE: aquasec/trivy:0.73.0@sha256:7cced7cae583819fc7806d4cbc0dbbc7cad18b99f7d3e235192e6da8c091045c
+      KUBERNETES_SERVER_VERSION: v1.36.4
+      KUBE_APISERVER_SHA256: 90939ee07af61ac3701c665647f9ce27f2f988f5c7fff406aa5794fd3e6328a6
+      KUBECTL_SHA256: 8b8f088da2dab964f853b38464033b1be15ede2839eca751482357c45abdd05a
+      ETCD_TEST_IMAGE: quay.io/coreos/etcd:v3.7.1@sha256:3c66a5191d37a11af19f50ad49beed162a988bd1752eabc9fe6b164f7ee443e5
+      TRIVY_IMAGE: aquasec/trivy:0.74.0@sha256:62b1e65e8869bc4b4c6aa4fa2b21595256c7c2f6018a9d9ad61caf87187c1969
       TRIVY_CACHE: /tmp/pasturestack-kubernetes-agent-trivy-cache
     steps:
       - name: Check out the complete source history
@@ -41,7 +42,7 @@ jobs:
           set -euo pipefail
           test -z "$(git status --porcelain)"
           test "$(git rev-parse HEAD)" = "$GITHUB_SHA"
-          test "$(git rev-list --count 63aadf22a77e2a452ee03c38159740835dc313cf..HEAD)" -eq 1
+          git merge-base --is-ancestor 63aadf22a77e2a452ee03c38159740835dc313cf "$GITHUB_SHA"
           mkdir -p dist
           printf '%s\n' "$GITHUB_SHA" > dist/source-revision.txt
           docker version
@@ -51,12 +52,12 @@ jobs:
         shell: bash
         run: |
           set -euo pipefail
-          archive="$RUNNER_TEMP/go1.26.6.linux-amd64.tar.gz"
+          archive="$RUNNER_TEMP/go1.27.0.linux-amd64.tar.gz"
           curl --fail --silent --show-error --location \
             --output "$archive" \
-            'https://go.dev/dl/go1.26.6.linux-amd64.tar.gz'
+            'https://go.dev/dl/go1.27.0.linux-amd64.tar.gz'
           printf '%s  %s\n' \
-            '708effb774be8237570d0add163225abbdfaf4fca28b2611df167beba4feef89' \
+            '675c26c449cbb18fc24b74650de1eabbae6e16f64326fd85a283fb3b58280685' \
             "$archive" | sha256sum --check
           tar -C "$RUNNER_TEMP" -xzf "$archive"
           "$RUNNER_TEMP/go/bin/go" version
@@ -177,134 +178,9 @@ jobs:
             sha256sum -c SHA256SUMS
           )
 
-      - name: Prove Kubernetes 1.12.10 API compatibility
+      - name: Prove Kubernetes 1.36.4 API compatibility
         shell: bash
-        run: |
-          set -euo pipefail
-          prefix="pstk-agent-${GITHUB_RUN_ID}-${GITHUB_RUN_ATTEMPT}"
-          etcd_container="${prefix}-etcd"
-          work_dir=$(mktemp -d "${RUNNER_TEMP}/${prefix}.XXXXXX")
-          api_pid=
-          stage=initializing
-          cleanup() {
-            status=$?
-            trap - EXIT
-            if [ -n "${api_pid}" ]; then
-              kill "${api_pid}" >/dev/null 2>&1 || true
-              wait "${api_pid}" >/dev/null 2>&1 || true
-            fi
-            docker logs "$etcd_container" > dist/etcd.log 2>&1 || true
-            docker rm -f "$etcd_container" >/dev/null 2>&1 || true
-            if [ "$status" -ne 0 ]; then
-              echo "KUBERNETES_AGENT_INTEGRATION_FAILED stage=${stage}" >&2
-              tail -n 150 dist/kube-apiserver.log >&2 || true
-              tail -n 100 dist/etcd.log >&2 || true
-            fi
-            rm -rf -- "$work_dir"
-            exit "$status"
-          }
-          trap cleanup EXIT
-          wait_for() {
-            attempts=$1
-            delay=$2
-            shift 2
-            for attempt in $(seq 1 "$attempts"); do
-              if "$@" >/dev/null 2>&1; then
-                return 0
-              fi
-              sleep "$delay"
-            done
-            "$@"
-          }
-          checkpoint() {
-            stage=$1
-            echo "KUBERNETES_AGENT_GATE_STAGE=${stage}"
-          }
-
-          checkpoint verify-inputs
-          docker pull "$ETCD_TEST_IMAGE"
-          etcd_repository=${ETCD_TEST_IMAGE%@sha256:*}
-          etcd_digest=sha256:${ETCD_TEST_IMAGE##*@sha256:}
-          docker image inspect "$ETCD_TEST_IMAGE" --format '{{range .RepoDigests}}{{println .}}{{end}}' |
-            grep -Fx "${etcd_repository%%:*}@${etcd_digest}"
-          curl -fsSL --retry 5 --retry-all-errors --retry-delay 2 \
-            -o "$work_dir/kubernetes-server.tgz" \
-            "https://dl.k8s.io/release/${KUBERNETES_SERVER_VERSION}/kubernetes-server-linux-amd64.tar.gz"
-          echo "$KUBERNETES_SERVER_SHA512  $work_dir/kubernetes-server.tgz" | sha512sum -c -
-          tar -C "$work_dir" -xzf "$work_dir/kubernetes-server.tgz" \
-            kubernetes/server/bin/kube-apiserver kubernetes/server/bin/kubectl
-          kube_apiserver="$work_dir/kubernetes/server/bin/kube-apiserver"
-          kubectl="$work_dir/kubernetes/server/bin/kubectl"
-          cert_dir="$work_dir/certs"
-          mkdir -p "$cert_dir"
-          chmod 0755 "$kube_apiserver" "$kubectl"
-
-          checkpoint start-etcd
-          docker run -d --name "$etcd_container" -p 127.0.0.1::2379 \
-            --entrypoint /usr/local/bin/etcd "$ETCD_TEST_IMAGE" \
-            --name=agent-test \
-            --data-dir=/tmp/etcd-data \
-            --listen-client-urls=http://0.0.0.0:2379 \
-            --advertise-client-urls=http://127.0.0.1:2379 \
-            --listen-peer-urls=http://0.0.0.0:2380 \
-            --initial-advertise-peer-urls=http://127.0.0.1:2380 \
-            --initial-cluster=agent-test=http://127.0.0.1:2380 \
-            --initial-cluster-state=new >/dev/null
-          etcd_port=$(docker port "$etcd_container" 2379/tcp | sed 's/.*://')
-          wait_for 60 1 curl -fsS "http://127.0.0.1:${etcd_port}/health"
-
-          checkpoint start-kubernetes-api
-          "$kube_apiserver" \
-            --etcd-servers="http://127.0.0.1:${etcd_port}" \
-            --storage-backend=etcd3 \
-            --cert-dir="$cert_dir" \
-            --insecure-bind-address=127.0.0.1 \
-            --insecure-port=18080 \
-            --bind-address=127.0.0.1 \
-            --secure-port=16443 \
-            --advertise-address=127.0.0.1 \
-            --endpoint-reconciler-type=none \
-            --service-cluster-ip-range=10.43.0.0/16 \
-            --authorization-mode=AlwaysAllow \
-            --admission-control=NamespaceLifecycle,LimitRanger,ServiceAccount,DefaultStorageClass,ResourceQuota \
-            > dist/kube-apiserver.log 2>&1 &
-          api_pid=$!
-          wait_for_api() {
-            for attempt in $(seq 1 90); do
-              if curl -fsS http://127.0.0.1:18080/healthz >/dev/null 2>&1; then
-                return 0
-              fi
-              if ! kill -0 "$api_pid" >/dev/null 2>&1; then
-                wait "$api_pid" >/dev/null 2>&1 || true
-                return 1
-              fi
-              sleep 1
-            done
-            curl -fsS http://127.0.0.1:18080/healthz
-          }
-          wait_for_api
-          checkpoint verify-kubernetes-version
-          "$kubectl" --server=http://127.0.0.1:18080 get --raw=/version > dist/kubernetes-version.json
-          jq -e '
-            .major == "1" and
-            (.minor | startswith("12")) and
-            .gitVersion == env.KUBERNETES_SERVER_VERSION
-          ' dist/kubernetes-version.json >/dev/null
-
-          checkpoint run-agent-integration-tests
-          docker run --rm --network host \
-            -v "$GITHUB_WORKSPACE:/source" \
-            -e DAPPER_UID="$(id -u)" \
-            -e DAPPER_GID="$(id -g)" \
-            -e ARCH=amd64 \
-            -e GOFLAGS=-mod=mod \
-            -e GOTOOLCHAIN=local \
-            -e RUN_LEGACY_K8S_INTEGRATION=true \
-            -e KUBERNETES_TEST_URL=http://127.0.0.1:18080 \
-            "$DAPPER_IMAGE" test | tee dist/kubernetes-integration-test.log
-          grep -Fq 'PASS' dist/kubernetes-integration-test.log
-          printf '{"kubernetes":"1.12.10","client_go":"0.36.3","passed":true}\n' \
-            > dist/kubernetes-integration.json
+        run: scripts/integration-kubernetes
 
       - name: Run Go vulnerability analysis
         shell: bash
@@ -331,8 +207,8 @@ jobs:
           mkdir -p "$TRIVY_CACHE"
           docker pull "$TRIVY_IMAGE"
           docker image inspect "$TRIVY_IMAGE" --format '{{range .RepoDigests}}{{println .}}{{end}}' |
-            grep -Fq 'aquasec/trivy@sha256:7cced7cae583819fc7806d4cbc0dbbc7cad18b99f7d3e235192e6da8c091045c'
-          test "$(docker run --rm "$TRIVY_IMAGE" --version)" = 'Version: 0.73.0'
+            grep -Fq 'aquasec/trivy@sha256:62b1e65e8869bc4b4c6aa4fa2b21595256c7c2f6018a9d9ad61caf87187c1969'
+          test "$(docker run --rm "$TRIVY_IMAGE" --version)" = 'Version: 0.74.0'
           docker run --rm \
             -v "$TRIVY_CACHE:/root/.cache/trivy" \
             "$TRIVY_IMAGE" image --cache-dir /root/.cache/trivy --download-db-only
@@ -429,7 +305,7 @@ jobs:
             .build_environment.applicable.critical == 0 and
             .build_environment.applicable.high == 0
           ' dist/security-counts.json >/dev/null
-          jq -e '.passed == true and .kubernetes == "1.12.10" and .client_go == "0.36.3"' \
+          jq -e '.passed == true and .kubernetes == "1.36.4" and .clientGo == "0.36.4"' \
             dist/kubernetes-integration.json >/dev/null
 
       - name: Remove verification-only images and cache

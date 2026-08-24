@@ -1,8 +1,8 @@
 package eventhandlers
 
 import (
-	revents "github.com/rancher/event-subscriber/events"
-	"github.com/rancher/go-rancher/v3"
+	"github.com/PastureStack/control-api-client/v3"
+	revents "github.com/PastureStack/event-subscriber/events"
 )
 
 func NewReply(event *revents.Event) *client.Publish {

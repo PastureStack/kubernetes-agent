@@ -4,10 +4,10 @@ import (
 	"fmt"
 	"time"
 
+	"github.com/PastureStack/control-api-client/v3"
+	revents "github.com/PastureStack/event-subscriber/events"
 	"github.com/PastureStack/kubernetes-agent/kubernetesclient"
 	util "github.com/PastureStack/kubernetes-agent/platformevents/util"
-	revents "github.com/rancher/event-subscriber/events"
-	"github.com/rancher/go-rancher/v3"
 	log "github.com/sirupsen/logrus"
 )
 

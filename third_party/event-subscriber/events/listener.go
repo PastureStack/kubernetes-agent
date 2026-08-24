@@ -13,9 +13,10 @@ import (
 
 	"regexp"
 
+	"errors"
 	"github.com/gorilla/websocket"
-	"github.com/pkg/errors"
-	"github.com/rancher/go-rancher/v3"
+
+	"github.com/PastureStack/control-api-client/v3"
 	log "github.com/sirupsen/logrus"
 )
 

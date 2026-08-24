@@ -7,7 +7,7 @@ import (
 	log "github.com/sirupsen/logrus"
 
 	"github.com/PastureStack/kubernetes-agent/kubernetesclient"
-	"github.com/rancher/go-rancher-metadata/metadata"
+	"github.com/PastureStack/platform-metadata-client/metadata"
 	"k8s.io/api/core/v1"
 	"k8s.io/apimachinery/pkg/util/validation"
 )

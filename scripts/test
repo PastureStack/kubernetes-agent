@@ -17,8 +17,19 @@ kind: Config
 clusters:
 - cluster:
     api-version: v1
-    insecure-skip-tls-verify: true
-    server: "http://localhost:8080"
+EOF
+if [ -n "${KUBERNETES_TEST_CA_FILE:-}" ]; then
+    if [ ! -r "${KUBERNETES_TEST_CA_FILE}" ]; then
+        echo "KUBERNETES_TEST_CA_FILE is not readable" >&2
+        exit 1
+    fi
+    printf '    certificate-authority: %s\n' "${KUBERNETES_TEST_CA_FILE}" >> "${KUBECONFIG}"
+else
+    printf '    insecure-skip-tls-verify: true\n' >> "${KUBECONFIG}"
+fi
+test_server=${KUBERNETES_TEST_URL:-http://localhost:8080}
+printf '    server: "%s"\n' "${test_server}" >> "${KUBECONFIG}"
+cat >> "${KUBECONFIG}" <<'EOF'
   name: "Default"
 contexts:
 - context:
@@ -31,15 +42,27 @@ users:
   user:
     token: "test"
 EOF
-if [ "${RUN_LEGACY_K8S_INTEGRATION:-false}" = "true" ] && [ -z "${KUBERNETES_TEST_URL:-}" ]; then
-    echo "KUBERNETES_TEST_URL is required when RUN_LEGACY_K8S_INTEGRATION=true" >&2
+if [ "${RUN_KUBERNETES_INTEGRATION:-false}" = "true" ] && [ -z "${KUBERNETES_TEST_URL:-}" ]; then
+    echo "KUBERNETES_TEST_URL is required when RUN_KUBERNETES_INTEGRATION=true" >&2
     exit 1
 fi
 go test -mod=mod -count=1 -v ./...
 
+echo "Running embedded control API client tests"
+(
+    cd third_party/control-api-client
+    go test -mod=mod -count=1 -v ./...
+)
+
 echo "Running embedded event subscriber tests"
 (
     cd third_party/event-subscriber
+    go test -mod=mod -count=1 -v ./...
+)
+
+echo "Running embedded metadata client tests"
+(
+    cd third_party/platform-metadata-client
     go test -mod=mod -count=1 -v ./...
 )
 

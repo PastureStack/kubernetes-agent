@@ -5,8 +5,8 @@ import (
 	"strings"
 	"time"
 
+	"github.com/PastureStack/control-api-client/v3"
 	"github.com/PastureStack/kubernetes-agent/kubernetesclient"
-	"github.com/rancher/go-rancher/v3"
 	"github.com/sirupsen/logrus"
 	"k8s.io/api/core/v1"
 	"k8s.io/apimachinery/pkg/fields"
@@ -34,7 +34,7 @@ func NewServiceHandler(rClient *client.RancherClient, kClient *kubernetesclient.
 func (s *serviceHandler) startServiceWatch() (chan struct{}, error) {
 	watchlist := cache.NewListWatchFromClient(s.kClient.K8sClient.CoreV1().RESTClient(), "services", v1.NamespaceAll, fields.Everything())
 	_, controller := cache.NewInformer(
-		compatibleListWatch(watchlist),
+		watchlist,
 		&v1.Service{},
 		time.Second*0,
 		cache.ResourceEventHandlerFuncs{

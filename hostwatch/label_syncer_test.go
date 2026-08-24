@@ -11,8 +11,8 @@ import (
 	"time"
 
 	"github.com/PastureStack/kubernetes-agent/kubernetesclient"
+	"github.com/PastureStack/platform-metadata-client/metadata"
 	cache "github.com/patrickmn/go-cache"
-	"github.com/rancher/go-rancher-metadata/metadata"
 	"k8s.io/api/core/v1"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 )

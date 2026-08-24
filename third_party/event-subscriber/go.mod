@@ -1,12 +1,16 @@
-module github.com/rancher/event-subscriber
+module github.com/PastureStack/event-subscriber
 
-go 1.26.6
+go 1.27.0
 
 require (
-	github.com/gorilla/websocket v1.5.3
-	github.com/pkg/errors v0.9.1
-	github.com/rancher/go-rancher v0.1.1-0.20170928163921-463b431ca017
-	github.com/sirupsen/logrus v1.10.0
+	github.com/PastureStack/control-api-client v0.0.0
+	github.com/gorilla/websocket v1.5.4-0.20250319132907-e064f32e3674
+	github.com/sirupsen/logrus v1.10.1
 )
 
-require golang.org/x/sys v0.13.0 // indirect
+require (
+	golang.org/x/net v0.58.0 // indirect
+	golang.org/x/sys v0.47.0 // indirect
+)
+
+replace github.com/PastureStack/control-api-client => ../control-api-client

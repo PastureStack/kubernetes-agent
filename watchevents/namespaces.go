@@ -3,8 +3,8 @@ package watchevents
 import (
 	"time"
 
+	"github.com/PastureStack/control-api-client/v3"
 	"github.com/PastureStack/kubernetes-agent/kubernetesclient"
-	"github.com/rancher/go-rancher/v3"
 	"github.com/sirupsen/logrus"
 	"k8s.io/api/core/v1"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
@@ -35,7 +35,7 @@ func NewNamespaceHandler(rClient *client.RancherClient, kClient *kubernetesclien
 func (n *namespaceHandler) startNamespaceWatch() (chan struct{}, error) {
 	watchlist := cache.NewListWatchFromClient(n.kClient.K8sClient.CoreV1().RESTClient(), "namespaces", "", fields.Everything())
 	_, controller := cache.NewInformer(
-		compatibleListWatch(watchlist),
+		watchlist,
 		&v1.Namespace{},
 		time.Second*0,
 		cache.ResourceEventHandlerFuncs{

@@ -1,11 +1,11 @@
 package platformevents
 
 import (
+	"github.com/PastureStack/control-api-client/v3"
+	revents "github.com/PastureStack/event-subscriber/events"
 	"github.com/PastureStack/kubernetes-agent/config"
 	"github.com/PastureStack/kubernetes-agent/kubernetesclient"
 	"github.com/PastureStack/kubernetes-agent/platformevents/eventhandlers"
-	revents "github.com/rancher/event-subscriber/events"
-	"github.com/rancher/go-rancher/v3"
 )
 
 func ConnectToEventStream(rClient *client.RancherClient, kClient *kubernetesclient.Client, conf config.Config) error {

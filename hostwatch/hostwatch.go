@@ -6,8 +6,8 @@ import (
 	"time"
 
 	"github.com/PastureStack/kubernetes-agent/kubernetesclient"
+	"github.com/PastureStack/platform-metadata-client/metadata"
 	cache "github.com/patrickmn/go-cache"
-	"github.com/rancher/go-rancher-metadata/metadata"
 
 	log "github.com/sirupsen/logrus"
 )

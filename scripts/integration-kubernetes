@@ -1,0 +1,162 @@
+#!/bin/bash
+set -euo pipefail
+
+repo_root=$(cd "$(dirname "$0")/.." && pwd)
+cd "${repo_root}"
+
+: "${KUBERNETES_SERVER_VERSION:?KUBERNETES_SERVER_VERSION is required}"
+: "${KUBE_APISERVER_SHA256:?KUBE_APISERVER_SHA256 is required}"
+: "${KUBECTL_SHA256:?KUBECTL_SHA256 is required}"
+: "${ETCD_TEST_IMAGE:?ETCD_TEST_IMAGE is required}"
+: "${DAPPER_IMAGE:?DAPPER_IMAGE is required}"
+
+prefix="pstk-agent-${GITHUB_RUN_ID:-local}-${GITHUB_RUN_ATTEMPT:-1}-$$"
+etcd_container="${prefix}-etcd"
+work_dir=$(mktemp -d "${RUNNER_TEMP:-/tmp}/${prefix}.XXXXXX")
+api_pid=
+stage=initializing
+dapper_uid=${DAPPER_UID_OVERRIDE:-$(id -u)}
+dapper_gid=${DAPPER_GID_OVERRIDE:-$(id -g)}
+
+cleanup() {
+    status=$?
+    trap - EXIT
+    if [ -n "${api_pid}" ]; then
+        kill "${api_pid}" >/dev/null 2>&1 || true
+        wait "${api_pid}" >/dev/null 2>&1 || true
+    fi
+    docker logs "${etcd_container}" > dist/etcd.log 2>&1 || true
+    docker rm -f "${etcd_container}" >/dev/null 2>&1 || true
+    if [ "${status}" -ne 0 ]; then
+        echo "KUBERNETES_AGENT_INTEGRATION_FAILED stage=${stage}" >&2
+        tail -n 150 dist/kube-apiserver.log >&2 || true
+        tail -n 100 dist/etcd.log >&2 || true
+    fi
+    rm -rf -- "${work_dir}"
+    exit "${status}"
+}
+trap cleanup EXIT
+
+wait_for() {
+    attempts=$1
+    delay=$2
+    shift 2
+    for _ in $(seq 1 "${attempts}"); do
+        if "$@" >/dev/null 2>&1; then
+            return 0
+        fi
+        sleep "${delay}"
+    done
+    "$@"
+}
+
+checkpoint() {
+    stage=$1
+    echo "KUBERNETES_AGENT_GATE_STAGE=${stage}"
+}
+
+mkdir -p dist
+
+checkpoint verify-inputs
+base_url="https://dl.k8s.io/${KUBERNETES_SERVER_VERSION}/bin/linux/amd64"
+for binary in kube-apiserver kubectl; do
+    curl --fail --silent --show-error --location --retry 5 --retry-all-errors \
+        --output "${work_dir}/${binary}" "${base_url}/${binary}"
+    chmod 0755 "${work_dir}/${binary}"
+done
+printf '%s  %s\n' "${KUBE_APISERVER_SHA256}" "${work_dir}/kube-apiserver" | sha256sum --check
+printf '%s  %s\n' "${KUBECTL_SHA256}" "${work_dir}/kubectl" | sha256sum --check
+
+docker pull "${ETCD_TEST_IMAGE}"
+expected_etcd_digest=${ETCD_TEST_IMAGE##*@}
+docker image inspect "${ETCD_TEST_IMAGE}" --format '{{range .RepoDigests}}{{println .}}{{end}}' |
+    grep -F "@${expected_etcd_digest}" >/dev/null
+
+openssl genrsa -out "${work_dir}/service-account.key" 2048 >/dev/null 2>&1
+openssl rsa -in "${work_dir}/service-account.key" -pubout \
+    -out "${work_dir}/service-account.pub" >/dev/null 2>&1
+printf 'test,pasturestack-integration,pasturestack-integration,system:masters\n' \
+    > "${work_dir}/tokens.csv"
+chmod 0600 "${work_dir}/service-account.key" "${work_dir}/tokens.csv"
+
+checkpoint start-etcd
+docker run -d --name "${etcd_container}" -p 127.0.0.1::2379 \
+    --entrypoint /usr/local/bin/etcd "${ETCD_TEST_IMAGE}" \
+    --name=agent-test \
+    --data-dir=/tmp/etcd-data \
+    --listen-client-urls=http://0.0.0.0:2379 \
+    --advertise-client-urls=http://127.0.0.1:2379 \
+    --listen-peer-urls=http://0.0.0.0:2380 \
+    --initial-advertise-peer-urls=http://127.0.0.1:2380 \
+    --initial-cluster=agent-test=http://127.0.0.1:2380 \
+    --initial-cluster-state=new >/dev/null
+etcd_port=$(docker port "${etcd_container}" 2379/tcp | head -n 1 | sed 's/.*://')
+wait_for 60 1 curl --max-time 1 -fsS "http://127.0.0.1:${etcd_port}/health"
+
+checkpoint start-kubernetes-api
+"${work_dir}/kube-apiserver" \
+    --etcd-servers="http://127.0.0.1:${etcd_port}" \
+    --cert-dir="${work_dir}/certs" \
+    --bind-address=127.0.0.1 \
+    --secure-port=16443 \
+    --advertise-address=127.0.0.1 \
+    --endpoint-reconciler-type=none \
+    --service-cluster-ip-range=10.43.0.0/16 \
+    --authorization-mode=AlwaysAllow \
+    --anonymous-auth=false \
+    --token-auth-file="${work_dir}/tokens.csv" \
+    --service-account-issuer=https://kubernetes.default.svc.cluster.local \
+    --service-account-signing-key-file="${work_dir}/service-account.key" \
+    --service-account-key-file="${work_dir}/service-account.pub" \
+    --disable-admission-plugins=ServiceAccount \
+    > dist/kube-apiserver.log 2>&1 &
+api_pid=$!
+
+api_url=https://127.0.0.1:16443
+wait_for_api() {
+    if ! kill -0 "${api_pid}" >/dev/null 2>&1; then
+        return 1
+    fi
+    curl --max-time 1 --insecure --fail --silent --show-error \
+        --header 'Authorization: Bearer test' "${api_url}/healthz"
+}
+wait_for 90 1 wait_for_api
+
+checkpoint verify-kubernetes-version
+"${work_dir}/kubectl" --server="${api_url}" --token=test \
+    --insecure-skip-tls-verify=true get --raw=/version > dist/kubernetes-version.json
+jq -e '
+    .major == "1" and
+    .minor == "36" and
+    .gitVersion == env.KUBERNETES_SERVER_VERSION
+' dist/kubernetes-version.json >/dev/null
+
+checkpoint run-agent-integration-tests
+docker run --rm --network host \
+    -v "${repo_root}:/source" \
+    -v "${work_dir}/certs:/kubernetes-test-certs:ro" \
+    -e DAPPER_UID="${dapper_uid}" \
+    -e DAPPER_GID="${dapper_gid}" \
+    -e ARCH=amd64 \
+    -e GOFLAGS=-mod=mod \
+    -e GOTOOLCHAIN=local \
+    -e RUN_KUBERNETES_INTEGRATION=true \
+    -e KUBERNETES_TEST_URL="${api_url}" \
+    -e KUBERNETES_TEST_CA_FILE=/kubernetes-test-certs/apiserver.crt \
+    "${DAPPER_IMAGE}" test | tee dist/kubernetes-integration-test.log
+grep -Fq 'PASS' dist/kubernetes-integration-test.log
+
+client_go_version=$(docker run --rm \
+    -v "${repo_root}:/source" \
+    -e DAPPER_UID="${dapper_uid}" \
+    -e DAPPER_GID="${dapper_gid}" \
+    -e GOTOOLCHAIN=local \
+    "${DAPPER_IMAGE}" bash -lc \
+    "go list -mod=mod -m -f '{{.Version}}' k8s.io/client-go")
+jq -n \
+    --arg kubernetes "${KUBERNETES_SERVER_VERSION#v}" \
+    --arg clientGo "${client_go_version#v}" \
+    '{kubernetes:$kubernetes,clientGo:$clientGo,passed:true}' \
+    > dist/kubernetes-integration.json
+
+echo "KUBERNETES_AGENT_INTEGRATION_OK kubernetes=${KUBERNETES_SERVER_VERSION} client_go=${client_go_version}"

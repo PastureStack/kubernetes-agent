@@ -5,8 +5,8 @@ import (
 	"encoding/json"
 	"time"
 
+	"github.com/PastureStack/control-api-client/v3"
 	"github.com/PastureStack/kubernetes-agent/kubernetesclient"
-	"github.com/rancher/go-rancher/v3"
 	"gopkg.in/check.v1"
 	"k8s.io/api/core/v1"
 	k8sErr "k8s.io/apimachinery/pkg/api/errors"

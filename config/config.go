@@ -4,7 +4,7 @@ import (
 	"fmt"
 	"os"
 
-	"github.com/rancher/go-rancher/v3"
+	"github.com/PastureStack/control-api-client/v3"
 	"github.com/urfave/cli"
 )
 

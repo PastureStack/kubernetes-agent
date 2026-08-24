@@ -3,8 +3,8 @@ package events
 import (
 	"fmt"
 
-	"github.com/rancher/event-subscriber/locks"
-	"github.com/rancher/go-rancher/v3"
+	"github.com/PastureStack/control-api-client/v3"
+	"github.com/PastureStack/event-subscriber/locks"
 	log "github.com/sirupsen/logrus"
 )
 

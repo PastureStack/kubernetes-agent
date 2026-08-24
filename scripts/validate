@@ -4,7 +4,7 @@ set -euo pipefail
 repo_root=$(cd "$(dirname "$0")/.." && pwd)
 cd "${repo_root}"
 
-for script in scripts/build scripts/ci scripts/collect-go-licenses scripts/entry scripts/package scripts/test scripts/validate scripts/version; do
+for script in scripts/build scripts/ci scripts/collect-go-licenses scripts/entry scripts/integration-kubernetes scripts/package scripts/test scripts/validate scripts/version; do
     bash -n "${script}"
 done
 
@@ -13,7 +13,7 @@ go mod tidy
 git diff --exit-code -- go.mod go.sum
 go vet -mod=mod ./...
 
-for module in third_party/event-subscriber third_party/go-rancher-metadata; do
+for module in third_party/control-api-client third_party/event-subscriber third_party/platform-metadata-client; do
     (
         cd "${module}"
         go mod verify
@@ -30,20 +30,19 @@ if [ -n "${unformatted}" ]; then
 fi
 
 required_markers=(
-    'go 1.26.6'
-    'FROM docker:29.6.2-cli@sha256:be132a9f282288de4afaf63379dff75711fda0147c6b72a9df44e51841402144 AS snapshot-ca-certificates'
+    'go 1.27.0'
+    'FROM docker:29.7.2-cli@sha256:000bb62ff495f986c9f5578eb67cc2cb98b91138eda81d7762d5371eb8a497fe AS snapshot-ca-certificates'
     'FROM ubuntu:26.04@sha256:678c6550cc43645e08669028bc177f50be4e7c5b8cca677067b1914d4afc7a03'
     "UBUNTU_APT_SNAPSHOT='20260808T000000Z'"
     'apt-get --snapshot "${UBUNTU_APT_SNAPSHOT}" update'
-    'GO_VERSION=1.26.6'
-    'DOCKER_VERSION=29.6.2'
+    'GO_VERSION=1.27.0'
+    'DOCKER_VERSION=29.7.2'
     'FROM gcr.io/distroless/static-debian12@sha256:4b2a093ef4649bccd586625090a3c668b254cfe180dee54f4c94f3e9bd7e381e'
     'USER 65532:65532'
     'org.opencontainers.image.revision="${SOURCE_REVISION}"'
     'config.ContentType = "application/json"'
     'truststore.ConfigurePlatformCA()'
     'go mod download all'
-    'cache.ToListWatcherWithWatchListSemantics'
     'cache.WaitForCacheSync'
 	'go test -mod=mod -race -count=1 ./...'
 	'PLATFORM_CA_ROOT must be an approved control-platform CA path'
@@ -56,7 +55,15 @@ for marker in "${required_markers[@]}"; do
     fi
 done
 
-grep -Fq 'k8s.io/client-go v0.36.3' go.mod
+grep -Fq 'k8s.io/client-go v0.36.4' go.mod
+grep -Fq 'github.com/PastureStack/control-api-client v0.0.0' go.mod
+grep -Fq 'github.com/PastureStack/event-subscriber v0.0.0' go.mod
+grep -Fq 'github.com/PastureStack/platform-metadata-client v0.0.0' go.mod
+
+if grep -R --include='*.go' --include='go.mod' -E 'github\.com/rancher/(go-rancher|go-rancher-metadata)|github\.com/pkg/errors' .; then
+    echo "KUBERNETES_AGENT_UNMAINTAINED_ACTIVE_DEPENDENCY_PRESENT" >&2
+    exit 1
+fi
 
 if [ -d vendor ] || [ -e trash.conf ] || [ -e dockerclient/docker_client.go ]; then
     echo "KUBERNETES_AGENT_STALE_VENDOR_OR_DOCKER_CLIENT_PRESENT" >&2
@@ -96,11 +103,12 @@ for marker in \
     'workflow_dispatch:' \
     'actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1' \
     'actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a' \
-    'TRIVY_IMAGE: aquasec/trivy:0.73.0@sha256:7cced7cae583819fc7806d4cbc0dbbc7cad18b99f7d3e235192e6da8c091045c' \
-    'KUBERNETES_SERVER_VERSION: v1.12.10' \
-    'KUBERNETES_SERVER_SHA512: 201ca1af1c4fbecd598a8a6dc0ff5c865e4dab767ec2e768e8100b0c6c450c5ae1ab773aad9e5cdf3f61c15abf3a28f7c4640fbaaac097096905366acbd90a97' \
-    'https://dl.k8s.io/release/${KUBERNETES_SERVER_VERSION}/kubernetes-server-linux-amd64.tar.gz' \
-    'RUN_LEGACY_K8S_INTEGRATION=true' \
+    'TRIVY_IMAGE: aquasec/trivy:0.74.0@sha256:62b1e65e8869bc4b4c6aa4fa2b21595256c7c2f6018a9d9ad61caf87187c1969' \
+    'KUBERNETES_SERVER_VERSION: v1.36.4' \
+    'KUBE_APISERVER_SHA256: 90939ee07af61ac3701c665647f9ce27f2f988f5c7fff406aa5794fd3e6328a6' \
+    'KUBECTL_SHA256: 8b8f088da2dab964f853b38464033b1be15ede2839eca751482357c45abdd05a' \
+    'ETCD_TEST_IMAGE: quay.io/coreos/etcd:v3.7.1@sha256:3c66a5191d37a11af19f50ad49beed162a988bd1752eabc9fe6b164f7ee443e5' \
+    'run: scripts/integration-kubernetes' \
     'go run golang.org/x/vuln/cmd/govulncheck@v1.7.0' \
 	'select(.finding?.trace[-1]?.function != null)' \
     'diff -u dist/locked-go-modules.tsv dist/runtime-license-modules.tsv' \
@@ -108,9 +116,6 @@ for marker in \
     'dapper-applicable-scan.json' \
     '.build_environment.applicable.critical == 0' \
 	'.build_environment.applicable.high == 0' \
-    '--secure-port=16443' \
-    '--cert-dir="$cert_dir"' \
-    '.gitVersion == env.KUBERNETES_SERVER_VERSION' \
     'retention-days: 7' \
     'Enforce the recorded security result'; do
     if ! grep -Fq -- "${marker}" "${security_workflow}"; then
@@ -133,7 +138,7 @@ for marker in \
     'build-mode: manual' \
     'upload: never' \
     'codeql_critical_high' \
-    'test "$(git rev-list --count 63aadf22a77e2a452ee03c38159740835dc313cf..HEAD)" -eq 1'; do
+    'git merge-base --is-ancestor 63aadf22a77e2a452ee03c38159740835dc313cf "$GITHUB_SHA"'; do
     if ! grep -Fq -- "${marker}" "${codeql_workflow}"; then
 		echo "KUBERNETES_AGENT_CODEQL_WORKFLOW_MARKER_MISSING marker=${marker}" >&2
 		exit 1

@@ -2,7 +2,7 @@ package hostwatch
 
 import (
 	"github.com/PastureStack/kubernetes-agent/kubernetesclient"
-	"github.com/rancher/go-rancher-metadata/metadata"
+	"github.com/PastureStack/platform-metadata-client/metadata"
 	log "github.com/sirupsen/logrus"
 )
 

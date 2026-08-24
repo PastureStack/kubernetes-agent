@@ -1,9 +1,9 @@
 package eventhandlers
 
 import (
+	"github.com/PastureStack/control-api-client/v3"
+	revents "github.com/PastureStack/event-subscriber/events"
 	util "github.com/PastureStack/kubernetes-agent/platformevents/util"
-	revents "github.com/rancher/event-subscriber/events"
-	"github.com/rancher/go-rancher/v3"
 )
 
 type PingHandler struct {

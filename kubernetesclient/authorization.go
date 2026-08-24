@@ -34,8 +34,7 @@ func GetK8sClientSet(apiURL string) (*kubernetes.Clientset, error) {
 	if apiURL != "" {
 		config.Host = apiURL
 	}
-	// JSON is supported by both Kubernetes 1.12 and current client-go releases.
-	// Explicit negotiation keeps proxy and test-server behaviour deterministic.
+	// Explicit JSON negotiation keeps proxy and test-server behaviour deterministic.
 	config.ContentType = "application/json"
 	config.AcceptContentTypes = "application/json"
 	clientSet, err := kubernetes.NewForConfig(config)

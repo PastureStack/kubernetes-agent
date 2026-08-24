@@ -4,7 +4,7 @@
 
 There is no supported PastureStack release yet. `0.7.3` is an unpublished
 candidate and must not enter a catalog until its source, image, and Kubernetes
-1.12.10 integration gates have passed at the exact candidate commit.
+1.36.4 integration gates have passed at the exact candidate commit.
 
 ## Security boundaries
 

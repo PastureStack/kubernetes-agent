@@ -8,10 +8,11 @@ PastureStack is an independent community effort to preserve, audit, and moderniz
 
 ## Project status
 
-Candidate `0.7.3` uses Go 1.26.6, Go modules, client-go 0.36.3, and logrus 1.10.0 while
-retaining the established event and Kubernetes API contracts. Its runtime is a
+Candidate `0.7.3` uses Go 1.27.0, Go modules, client-go 0.36.4, and logrus 1.10.1 while
+retaining the established event and Kubernetes API contracts. Kubernetes 1.36.4
+is the supported and tested API line. Its runtime is a
 digest-pinned distroless image that runs as UID/GID 65532. Source, runtime, and
-Kubernetes 1.12.10 integration tests must all pass before a release or catalog
+Kubernetes 1.36.4 integration tests must all pass before a release or catalog
 reference is created.
 
 No PastureStack image or release has been published for this candidate. The

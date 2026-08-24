@@ -6,12 +6,12 @@ import (
 	"k8s.io/client-go/tools/cache"
 )
 
-func TestCompatibleListWatchUsesListThenWatch(t *testing.T) {
-	listWatch := compatibleListWatch(&cache.ListWatch{})
-	capability, ok := listWatch.(interface {
+func TestListWatchDoesNotDisableStreamingInitialLists(t *testing.T) {
+	listWatch := &cache.ListWatch{}
+	capability, ok := any(listWatch).(interface {
 		IsWatchListSemanticsUnSupported() bool
 	})
-	if !ok || !capability.IsWatchListSemanticsUnSupported() {
-		t.Fatal("Kubernetes 1.12 compatibility requires list-then-watch startup")
+	if ok && capability.IsWatchListSemanticsUnSupported() {
+		t.Fatal("current Kubernetes support must not force legacy list-then-watch startup")
 	}
 }
