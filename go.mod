@@ -9,7 +9,7 @@ require (
 	github.com/PastureStack/event-subscriber v0.0.0
 	github.com/PastureStack/platform-metadata-client v0.0.0
 	github.com/patrickmn/go-cache v2.1.0+incompatible
-	github.com/sirupsen/logrus v1.10.1
+	github.com/sirupsen/logrus v1.10.2
 	github.com/urfave/cli v1.22.17
 	gopkg.in/check.v1 v1.0.0-20201130134442-10cb98267c6c
 	k8s.io/api v0.36.4
