@@ -134,8 +134,8 @@ fi
 codeql_workflow=.github/workflows/codeql-verification.yml
 for marker in \
     "'verification/kubernetes-agent-*'" \
-    'github/codeql-action/init@ff2f1c621b7f889edc0d3c761ac2e6a3f8cdb0dd # v4.37.7' \
-    'github/codeql-action/analyze@ff2f1c621b7f889edc0d3c761ac2e6a3f8cdb0dd # v4.37.7' \
+    'github/codeql-action/init@db488ddef3bf6cb639b32c2e9a7c0a7ea8271d28 # v4.37.8' \
+    'github/codeql-action/analyze@db488ddef3bf6cb639b32c2e9a7c0a7ea8271d28 # v4.37.8' \
     'build-mode: manual' \
     'upload: never' \
     'codeql_critical_high' \
