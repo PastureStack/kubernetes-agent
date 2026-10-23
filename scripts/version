@@ -10,7 +10,7 @@ if [ -z "${candidate}" ]; then
     candidate=0.0.0
 fi
 if ! [[ "${candidate}" =~ ^[0-9]+\.[0-9]+\.[0-9]+$ ]]; then
-    echo "VERSION_OVERRIDE must be a numeric semantic version such as 0.7.3" >&2
+    echo "VERSION_OVERRIDE must be a numeric semantic version such as 0.7.4" >&2
     return 1 2>/dev/null || exit 1
 fi
 VERSION=${candidate}
