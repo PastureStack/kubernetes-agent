@@ -1,0 +1,10 @@
+{
+  "repository": "PastureStack/kubernetes-agent",
+  "package": "linux-libc-dev",
+  "version": "7.0.0-38.38",
+  "purl": "pkg:deb/ubuntu/linux-libc-dev@7.0.0-38.38?arch=amd64&distro=ubuntu-26.04",
+  "justification": "vulnerable_code_not_present",
+  "reason": "No linux-libc-dev package or findings exist in the current Go-only Dapper image. No header CVE is permitted by this empty set.",
+  "checkedAt": "2026-10-23",
+  "ids": []
+}

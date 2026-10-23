@@ -79,11 +79,15 @@ if grep -R --exclude=validate -E 'GO_TEST_RACE=false|go test .*\$\{test_flags\[@
 	echo "KUBERNETES_AGENT_RACE_GATE_CAN_BE_DISABLED" >&2
 	exit 1
 fi
-if grep -Eq '^FROM (ubuntu|alpine|debian):' package/Dockerfile || \
-    grep -Eq 'apt-get|apk add|yum install|ENTRYPOINT \["/.*sh"' package/Dockerfile; then
+# Build-only extraction stages may use packaging tools; the final runtime may not.
+final_stage=$(awk '/^FROM / { stage=$0; body="" } { body=body $0 "\n" } END { print body }' package/Dockerfile)
+if ! printf '%s\n' "$final_stage" | grep -Fxq 'FROM scratch' || \
+    printf '%s\n' "$final_stage" | grep -Eq '^FROM (ubuntu|alpine|debian):|^RUN |ENTRYPOINT \["/.*sh"'; then
     echo "KUBERNETES_AGENT_RUNTIME_PACKAGE_MANAGER_OR_SHELL_PRESENT" >&2
     exit 1
 fi
+grep -Fq 'COPY --from=security-rootfs /rootfs/ /' package/Dockerfile
+
 if grep -R -E 'ghcr\.io/[^/]+/[^:[:space:]]+@sha256:' README.md SECURITY.md COMPATIBILITY.md package scripts; then
     echo "KUBERNETES_AGENT_USER_VISIBLE_IMAGE_DIGEST_PRESENT" >&2
     exit 1

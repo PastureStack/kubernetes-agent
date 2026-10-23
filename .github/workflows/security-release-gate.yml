@@ -19,9 +19,9 @@ jobs:
     runs-on: ubuntu-24.04
     timeout-minutes: 120
     env:
-      CANDIDATE_VERSION: 0.7.3
-      CANDIDATE_TAG: v0.7.3
-      IMAGE: pasturestack/kubernetes-agent:v0.7.3
+      CANDIDATE_VERSION: 0.7.4
+      CANDIDATE_TAG: v0.7.4
+      IMAGE: pasturestack/kubernetes-agent:v0.7.4
       DAPPER_IMAGE: pasturestack-kubernetes-agent-dapper:security-gate
       KUBERNETES_SERVER_VERSION: v1.36.4
       KUBE_APISERVER_SHA256: 90939ee07af61ac3701c665647f9ce27f2f988f5c7fff406aa5794fd3e6328a6
@@ -242,9 +242,9 @@ jobs:
               "$TRIVY_IMAGE" image --cache-dir /root/.cache/trivy \
               --skip-db-update --offline-scan "$@"
           }
-          run_image_scan --scanners vuln,secret \
+          run_image_scan --scanners vuln,secret --list-all-pkgs \
             --format json --output /evidence/runtime-scan.json "$IMAGE"
-          run_image_scan --scanners vuln,secret \
+          run_image_scan --scanners vuln,secret --list-all-pkgs \
             --format json --output /evidence/dapper-scan.json "$DAPPER_IMAGE"
           run_image_scan --scanners vuln \
             --vex /source/security/dapper.openvex.json \
@@ -275,6 +275,14 @@ jobs:
             --argjson dapper_applicable_high "$dapper_applicable_high" \
             '{source:{critical:$source_critical,high:$source_high,secrets:$source_secrets},runtime:{critical:$runtime_critical,high:$runtime_high,secrets:$runtime_secrets},build_environment:{raw:{critical:$dapper_critical,high:$dapper_high},applicable:{critical:$dapper_applicable_critical,high:$dapper_applicable_high},vex:"security/dapper.openvex.json"}}' \
             > dist/security-counts.json
+
+      - name: Enforce full runtime vulnerability policy
+        run: |
+          bash .github/scripts/check-builder-header-boundary.sh "$DAPPER_IMAGE" > dist/dapper-header-boundary.json
+          python3 .github/scripts/test_builder_vulnerability_policy.py
+          python3 .github/scripts/enforce-runtime-vulnerabilities.py --scope builder --repository PastureStack/kubernetes-agent < dist/dapper-scan.json
+          python3 .github/scripts/test_runtime_vulnerability_policy.py
+          python3 .github/scripts/enforce-runtime-vulnerabilities.py --repository PastureStack/kubernetes-agent < dist/runtime-scan.json
 
       - name: Record evidence checksums
         if: always()
