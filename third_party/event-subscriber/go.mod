@@ -2,7 +2,7 @@ module github.com/PastureStack/event-subscriber
 
 go 1.26.0
 
-toolchain go1.27.0
+toolchain go1.27.3
 
 require (
 	github.com/PastureStack/control-api-client v0.0.0
@@ -11,8 +11,8 @@ require (
 )
 
 require (
-	golang.org/x/net v0.58.0 // indirect
-	golang.org/x/sys v0.47.0 // indirect
+	golang.org/x/net v0.60.0 // indirect
+	golang.org/x/sys v0.48.0 // indirect
 )
 
 replace github.com/PastureStack/control-api-client => ../control-api-client

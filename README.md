@@ -8,7 +8,7 @@ PastureStack is an independent community effort to preserve, audit, and moderniz
 
 ## Project status
 
-Candidate `0.7.3` uses Go 1.27.0, Go modules, client-go 0.36.4, and logrus 1.10.1 while
+Candidate `0.7.3` uses Go 1.27.3, Go modules, client-go 0.36.4, and logrus 1.10.1 while
 retaining the established event and Kubernetes API contracts. Kubernetes 1.36.4
 is the supported and tested API line. Its runtime is a
 digest-pinned distroless image that runs as UID/GID 65532. Source, runtime, and
@@ -48,3 +48,7 @@ change a catalog. See [COMPATIBILITY.md](COMPATIBILITY.md),
 ## License and attribution
 
 The inherited project remains licensed under [Apache License 2.0](LICENSE). Copyright and attribution for inherited work and vendored dependencies remain with their respective authors and contributors. PastureStack contributors claim authorship only for their own changes.
+
+## October 2026 security maintenance
+
+Maintained Go builds select the patched Go 1.27.3 compiler without raising the existing Go language requirement. Ubuntu build/runtime stages apply the checksum-pinned `ca-certificates 20260816ubuntu0.26.04.1` security package after their frozen APT baseline; the final trust store and installed version are verified. Release artifacts must pass the repository's existing checks before publication.
