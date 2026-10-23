@@ -8,17 +8,17 @@ PastureStack is an independent community effort to preserve, audit, and moderniz
 
 ## Project status
 
-Published release `v0.7.3` uses Go 1.27.3, Go modules, client-go 0.36.4, and logrus 1.10.1 while
+Published release `v0.7.4` uses Go 1.27.3, Go modules, client-go 0.36.4, and logrus 1.10.1 while
 retaining the established event and Kubernetes API contracts. Kubernetes 1.36.4
 is the supported and tested API line. Its runtime is a
 digest-pinned distroless image that runs as UID/GID 65532. Source, runtime, and
 Kubernetes 1.36.4 integration tests must all pass before a release or catalog
 reference is created.
 
-The [v0.7.3 release](https://github.com/PastureStack/kubernetes-agent/releases/tag/v0.7.3) publishes the exact checked producer `092f1ce5499c4151d0780591cf9a2b71c6d5267e` from [run 39962596272](https://github.com/PastureStack/kubernetes-agent/actions/runs/39962596272). Its registry digest is `sha256:1224ab0f4f5b621fb9f5de3ae386352e58d5d8d333a1a1bddcd9d78543fdfa57`. User-facing configuration retains the plain version tag:
+The [v0.7.4 release](https://github.com/PastureStack/kubernetes-agent/releases/tag/v0.7.4) retains the original producer, publication evidence and registry digest recorded under [Full-severity security release](#full-severity-security-release). User-facing configuration uses the plain version tag:
 
 ```text
-ghcr.io/pasturestack/kubernetes-agent:v0.7.3
+ghcr.io/pasturestack/kubernetes-agent:v0.7.4
 ```
 
 ## Configuration
