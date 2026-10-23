@@ -11,8 +11,8 @@ require (
 )
 
 require (
-	golang.org/x/net v0.58.0 // indirect
-	golang.org/x/sys v0.47.0 // indirect
+	golang.org/x/net v0.60.0 // indirect
+	golang.org/x/sys v0.48.0 // indirect
 )
 
 replace github.com/PastureStack/control-api-client => ../control-api-client

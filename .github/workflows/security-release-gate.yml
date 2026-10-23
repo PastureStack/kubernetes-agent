@@ -97,7 +97,11 @@ jobs:
             go test -mod=mod -race -count=1 ./...
           )
           (
-            cd third_party/go-rancher-metadata
+            cd third_party/platform-metadata-client
+            go test -mod=mod -race -count=1 ./...
+          )
+          (
+            cd third_party/control-api-client
             go test -mod=mod -race -count=1 ./...
           )
 
