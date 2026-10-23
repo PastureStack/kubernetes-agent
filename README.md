@@ -52,14 +52,22 @@ The inherited project remains licensed under [Apache License 2.0](LICENSE). Copy
 
 Maintained Go builds select the patched Go 1.27.3 compiler without raising the existing Go language requirement. Ubuntu build/runtime stages apply the checksum-pinned `ca-certificates 20260816ubuntu0.26.04.1` security package after their frozen APT baseline; the final trust store and installed version are verified. Release artifacts must pass the repository's existing checks before publication.
 
-## Full-severity security rebuild candidate
+## Full-severity security release
 
-The next compatible release candidate is **v0.7.4**, not yet published. It retains the existing Go binary/API contract and shell-free, non-root runtime, and overlays the official Debian 12 tzdata 2026c-0+deb12u1 and ca-certificates 20250419~deb12u2 payloads. Package metadata is updated from the same verified packages; revoked roots are removed rather than merged back.
+The compatible security release [v0.7.4](https://github.com/PastureStack/kubernetes-agent/releases/tag/v0.7.4) is published. It retains the existing Go binary/API contract and shell-free, non-root runtime, and overlays the official Debian 12 tzdata 2026c-0+deb12u1 and ca-certificates 20250419~deb12u2 payloads. Package metadata is updated from the same verified packages; revoked roots are removed rather than merged back.
+
+The published image records producer `9dda1e0000be7856c1f078903a60d4a3017152fc`
+and manifest digest
+`sha256:028960ce47f8ef4b928374569ac2d4638f97071e623a082d0bddbeca4819ed33`.
+The release tag points to `de0fd0a667e7abcfe593f17b4ae2b8931c0a94ab`, whose source
+tree matches that producer. See the [official publication](https://github.com/PastureStack/kubernetes-agent/actions/runs/39974509402)
+for artifact evidence; deployment acceptance remains separate.
 
 The full-severity runtime gate rejects every finding with an official fix,
 including LOW, MEDIUM and UNKNOWN. Only exact reviewed LOW/MEDIUM no-fix entries
-may pass. Existing v0.7.3 remains published for provenance, but is not the fully
-patched candidate.
+may pass. Existing v0.7.3 remains published for provenance and is superseded by
+v0.7.4.
+
 ### Complete build-environment gate
 
 The Dapper scan retains all severities and requires nonempty package analysis for the expected Go binaries. Any available fixed version fails, including Low, Medium and Unknown findings. Other Low/Medium findings require an exact package/version/PURL entry backed by the official vendor tracker. The pinned userspace kernel-header exception additionally requires the reviewed CVE set, actual header payload paths, and absence of kernel images/modules; it never permits an available fix. Unknown module findings require the separately verified exact source package graph, not a generic severity exemption.
